@@ -2,9 +2,45 @@ import type { Message } from "@/types/chat";
 
 const DEMO_DELAY_MS = 35;
 
+function abortError(): DOMException {
+  return new DOMException("Dibatalkan", "AbortError");
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) {
-    throw new DOMException("Dibatalkan", "AbortError");
+  if (signal.aborted) throw abortError();
+}
+
+function transportError(error: unknown, signal: AbortSignal): never {
+  if (isAbortError(error)) throw error;
+  if (signal.aborted) throw abortError();
+  throw new Error("Gagal menghubungi agen.");
+}
+
+async function readStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  throwIfAborted(signal);
+
+  try {
+    return await reader.read();
+  } catch (error) {
+    return transportError(error, signal);
+  }
+}
+
+async function cancelStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    await reader.cancel();
+  } catch (error) {
+    transportError(error, signal);
   }
 }
 
@@ -37,14 +73,17 @@ async function streamEventStream(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let dataLines: string[] = [];
+  let finished = false;
 
-  const handleLine = (line: string): boolean => {
-    const value = line.endsWith("\r") ? line.slice(0, -1) : line;
-    if (!value.startsWith("data:")) return false;
+  const processEvent = (): boolean => {
+    if (!dataLines.length) return false;
 
-    const data = value.slice(5).replace(/^ /, "");
-    if (data.trim() === "[DONE]") return true;
+    const data = dataLines.join("\n");
+    dataLines = [];
+
     if (!data.trim()) return false;
+    if (data.trim() === "[DONE]") return true;
 
     throwIfAborted(signal);
     const token = tokenFromData(data);
@@ -52,25 +91,58 @@ async function streamEventStream(
     return false;
   };
 
+  const processLine = (line: string): boolean => {
+    const value = line.endsWith("\r") ? line.slice(0, -1) : line;
+    if (!value) return processEvent();
+
+    if (value.startsWith("data:")) {
+      dataLines.push(value.slice(5).replace(/^ /, ""));
+    }
+
+    return false;
+  };
+
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    while (!finished) {
+      const { done, value } = await readStream(reader, signal);
+      if (done) {
+        throwIfAborted(signal);
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
-      // ponytail: one data line per event; join multi-line data if a provider splits tokens.
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        if (handleLine(line)) return;
+        if (processLine(line)) {
+          finished = true;
+          break;
+        }
       }
     }
 
-    buffer += decoder.decode();
-    for (const line of buffer.split("\n")) {
-      handleLine(line);
+    if (finished) {
+      await cancelStream(reader, signal);
+      throwIfAborted(signal);
+      return;
     }
+
+    buffer += decoder.decode();
+    if (buffer) {
+      for (const line of buffer.split("\n")) {
+        if (processLine(line)) {
+          await cancelStream(reader, signal);
+          throwIfAborted(signal);
+          return;
+        }
+      }
+    }
+
+    if (processEvent()) {
+      await cancelStream(reader, signal);
+    }
+    throwIfAborted(signal);
   } finally {
     reader.releaseLock();
   }
@@ -86,8 +158,11 @@ async function streamText(
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      const { done, value } = await readStream(reader, signal);
+      if (done) {
+        throwIfAborted(signal);
+        break;
+      }
 
       const chunk = decoder.decode(value, { stream: true });
       if (!chunk) continue;
@@ -101,6 +176,7 @@ async function streamText(
       throwIfAborted(signal);
       onToken(tail);
     }
+    throwIfAborted(signal);
   } finally {
     reader.releaseLock();
   }
@@ -138,8 +214,7 @@ export async function streamReply(
       signal,
     });
   } catch (error) {
-    if (signal.aborted) throw error;
-    throw new Error("Gagal menghubungi agen.");
+    transportError(error, signal);
   }
 
   if (!response.ok) {
@@ -150,7 +225,9 @@ export async function streamReply(
     throw new Error("Agen tidak mengirim isi respons.");
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
+  const contentType = (
+    response.headers.get("content-type") ?? ""
+  ).toLowerCase();
 
   if (contentType.includes("text/event-stream")) {
     await streamEventStream(response.body, signal, onToken);
