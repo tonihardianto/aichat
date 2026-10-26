@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { streamReply } from "@/lib/agent";
-import type { Conversation, Message } from "@/types/chat";
+import type { Conversation, ImageAttachment, Message } from "@/types/chat";
 
 const MAX_MESSAGE_LENGTH = 8_000;
 const CONNECTION_ERROR =
@@ -12,7 +12,7 @@ export type UpdateConversation = (
 ) => void;
 
 export type UseChatResult = {
-  send: (content: string) => void;
+  send: (content: string, image?: ImageAttachment) => Promise<void>;
   stop: () => void;
   retry: () => void;
   regenerate: () => void;
@@ -120,9 +120,9 @@ export function useChat(
   );
 
   const send = useCallback(
-    (content: string) => {
+    async (content: string, image?: ImageAttachment) => {
       if (
-        !content.trim() ||
+        (!content.trim() && !image) ||
         content.length > MAX_MESSAGE_LENGTH ||
         controllerRef.current
       ) {
@@ -135,6 +135,7 @@ export function useChat(
         id: crypto.randomUUID(),
         role: "user",
         content,
+        ...(image ? { image } : {}),
         createdAt: timestamp,
       };
 
