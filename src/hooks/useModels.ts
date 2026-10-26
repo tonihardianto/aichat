@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listModels } from "@/lib/agent";
 
 const MODEL_KEY = "ai-chat-model";
@@ -19,14 +19,18 @@ export function useModels() {
   );
   const [isLoading, setIsLoading] = useState(!isDemo);
   const [error, setError] = useState<string | null>(null);
+  const initialLoadRef = useRef(false);
+  const requestRef = useRef(0);
 
   const reload = useCallback(async () => {
     if (isDemo) return;
 
+    const request = ++requestRef.current;
     setIsLoading(true);
     setError(null);
     try {
       const loadedModels = await listModels();
+      if (request !== requestRef.current) return;
       setModels(loadedModels);
       setSelectedModel((current) =>
         current && loadedModels.includes(current)
@@ -34,13 +38,16 @@ export function useModels() {
           : (loadedModels[0] ?? null),
       );
     } catch {
+      if (request !== requestRef.current) return;
       setError("Gagal memuat daftar model. Coba lagi.");
     } finally {
-      setIsLoading(false);
+      if (request === requestRef.current) setIsLoading(false);
     }
   }, [isDemo]);
 
   useEffect(() => {
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
     void reload();
   }, [reload]);
 
