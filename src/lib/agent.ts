@@ -45,7 +45,7 @@ async function cancelStream(
   }
 }
 
-function tokenFromValue(value: unknown): string {
+export function tokenFromValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (!value || typeof value !== "object") return "";
 
@@ -54,6 +54,8 @@ function tokenFromValue(value: unknown): string {
     const token = tokenFromValue(record[key]);
     if (token) return token;
   }
+
+  if (Array.isArray(record.choices)) return tokenFromValue(record.choices[0]);
 
   return "";
 }

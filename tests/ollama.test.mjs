@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createServer } from "vite";
 import { ollamaUrl, toOllamaMessages } from "../src/lib/ollama.ts";
 
 test("ollamaUrl trims trailing slash", () => {
@@ -16,4 +17,14 @@ test("toOllamaMessages emits text and image_url parts", () => {
       { type: "image_url", image_url: { url: "data:image/png;base64,AA" } },
     ],
   }]);
+});
+
+test("tokenFromValue reads OpenAI chat completion SSE delta content", async () => {
+  const server = await createServer({ configFile: "vite.config.ts", server: { middlewareMode: true } });
+  try {
+    const { tokenFromValue } = await server.ssrLoadModule("/src/lib/agent.ts");
+    assert.equal(tokenFromValue({ choices: [{ delta: { content: "token" } }] }), "token");
+  } finally {
+    await server.close();
+  }
 });
