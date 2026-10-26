@@ -27,3 +27,28 @@
 ## Commit
 
 - `94feffd feat: send image attachments to Ollama`
+
+## Review fixes
+
+### Changes
+
+- `src/components/chat/Composer.tsx`: added a read generation counter. New selections invalidate prior reads; removing an image or successfully sending invalidates pending reads. Stale `load` and `error` callbacks cannot overwrite current state. Non-string FileReader results show the same Indonesian error as read failures.
+
+### Tests and build
+
+- Command: `node --test tests/ollama.test.mjs && npm run build`
+- Output: tests pass (2/2; 0 failures); TypeScript and Vite production build pass. Vite reports main chunk exceeds 500 kB.
+
+### Files
+
+- `src/components/chat/Composer.tsx`
+- `.superpowers/sdd/2026-10-26-ollama-model-images/task-3-report.md`
+
+### Self-review and concerns
+
+- Token check covers both successful and failed stale reads. Selection token increments before file validation, so invalid next selection also prevents older valid file from taking over.
+- No UI race test added; requested existing tests and build pass.
+
+### Commit
+
+- Pending.
