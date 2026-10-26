@@ -19,7 +19,7 @@ type SidebarProps = {
 
 export function Sidebar({ conversations, activeId, onSelect, onNew, onRename, onDelete }: SidebarProps) {
   const [renaming, setRenaming] = useState<string | null>(null);
-  return <aside className="flex h-full w-full flex-col bg-slate-50 p-3 dark:bg-slate-950">
+  return <aside className="flex h-full w-full flex-col bg-card p-3">
     <Button className="w-full justify-start gap-2" variant="outline" onClick={onNew}><Plus />Percakapan baru</Button>
     <h2 className="px-2 pb-2 pt-6 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Riwayat</h2>
     <nav aria-label="Riwayat percakapan" className="min-h-0 flex-1 space-y-1 overflow-y-auto">
