@@ -36,6 +36,7 @@ function isAbortError(error: unknown): boolean {
 export function useChat(
   conversation: Conversation,
   updateConversation: UpdateConversation,
+  model: string | null,
 ): UseChatResult {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +74,7 @@ export function useChat(
       let completed = false;
 
       try {
-        await streamReply(messages, controller.signal, (token) => {
+        await streamReply(messages, model, controller.signal, (token) => {
           updateConversationRef.current(conversationId, (current) => ({
             ...current,
             messages: current.messages.map((message) =>
@@ -115,7 +116,7 @@ export function useChat(
         }
       }
     },
-    [],
+    [model],
   );
 
   const send = useCallback(

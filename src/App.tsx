@@ -7,7 +7,9 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { Sidebar } from "@/components/chat/Sidebar";
 import { MessageList } from "@/components/chat/MessageList";
 import { Composer } from "@/components/chat/Composer";
+import { ModelSelect } from "@/components/chat/ModelSelect";
 import { resolveTheme, type ThemePreference } from "@/lib/theme";
+import { useModels } from "@/hooks/useModels";
 
 const THEME_KEY = "ai-chat-theme";
 
@@ -18,7 +20,8 @@ function initialTheme(): ThemePreference {
 
 export default function App() {
   const conversations = useConversations();
-  const chat = useChat(conversations.activeConversation, conversations.updateConversation);
+  const models = useModels();
+  const chat = useChat(conversations.activeConversation, conversations.updateConversation, models.selectedModel);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePreference>(initialTheme);
   useEffect(() => {
@@ -41,13 +44,16 @@ export default function App() {
   return <main className="flex h-dvh min-h-[360px] min-w-[360px] overflow-hidden bg-background text-foreground">
     <div className="hidden w-64 shrink-0 border-r md:block"><Sidebar {...sidebarProps} /></div>
     <section aria-label="Chat" className="flex min-w-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b px-3 md:px-5">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 md:px-5">
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}><SheetTrigger asChild><Button className="md:hidden" variant="ghost" size="icon" aria-label="Buka riwayat"><Menu /></Button></SheetTrigger><SheetContent side="left" className="w-[min(85vw,320px)] p-0"><SheetTitle className="sr-only">Riwayat percakapan</SheetTitle><Sidebar {...sidebarProps} /></SheetContent></Sheet>
         <div className="flex size-8 items-center justify-center rounded-lg bg-blue-600 text-white"><MessageSquare className="size-4" /></div><div className="min-w-0"><h1 className="truncate text-sm font-semibold">AI Chat</h1><p className="text-xs text-muted-foreground">Asisten percakapan</p></div>
-        <label className="ml-auto text-xs text-muted-foreground" htmlFor="tema">Tema</label>
-        <select id="tema" value={theme} onChange={(event) => setTheme(event.target.value as ThemePreference)} className="rounded-md border bg-background px-2 py-1 text-xs">
-          <option value="system">Sistem</option><option value="light">Terang</option><option value="dark">Gelap</option>
-        </select>
+        <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
+          <ModelSelect models={models.models} value={models.selectedModel} loading={models.isLoading} error={models.error} isDemo={models.isDemo} onChange={models.setSelectedModel} onReload={models.reload} />
+          <label className="text-xs text-muted-foreground" htmlFor="tema">Tema</label>
+          <select id="tema" value={theme} onChange={(event) => setTheme(event.target.value as ThemePreference)} className="h-8 rounded-md border bg-background px-2 text-xs">
+            <option value="system">Sistem</option><option value="light">Terang</option><option value="dark">Gelap</option>
+          </select>
+        </div>
       </header>
       <MessageList messages={conversations.activeConversation.messages} isStreaming={chat.isStreaming} onRegenerate={chat.regenerate} />
       <div className={`shrink-0 ${empty ? "mt-auto" : ""}`}>
