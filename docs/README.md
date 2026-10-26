@@ -26,23 +26,25 @@ VITE_AGENT_URL=https://agent.example.com/chat
 
 Jalankan ulang `npm run dev` setelah mengubah env. Vite menanamkan nilai ini saat build, jadi build produksi juga perlu env yang benar.
 
-Jika `VITE_AGENT_URL` kosong atau tidak diset, aplikasi memakai mode demo: balasan dipalsukan dan di-stream bertahap tanpa memanggil server.
+`VITE_AGENT_URL` adalah fallback lama untuk endpoint chat kustom. Jika `VITE_OLLAMA_BASE_URL` diset, aplikasi memakai Ollama dan mengabaikan `VITE_AGENT_URL`. Mode demo hanya aktif jika kedua variabel kosong: balasan dipalsukan dan di-stream bertahap tanpa memanggil server.
 
 ## Menghubungkan Ollama
 
-Ollama menyediakan API yang kompatibel dengan OpenAI. Set `VITE_OLLAMA_BASE_URL` ke base URL API, termasuk `/v1`:
+Ollama menyediakan API yang kompatibel dengan OpenAI. Taruh konfigurasi di `.env.local` pada akar proyek dan set `VITE_OLLAMA_BASE_URL` ke base URL API, termasuk `/v1`:
 
 ```env
 VITE_OLLAMA_BASE_URL=http://10.20.30.35:11434/v1
 ```
 
-Jalankan ulang `npm run dev` setelah mengubah env. Jika variabel ini kosong, aplikasi memakai mode demo.
+Jalankan ulang `npm run dev` setelah mengubah env. Ollama dipakai jika variabel ini diset. Jika kosong, aplikasi memakai `VITE_AGENT_URL` bila ada; jika keduanya kosong, aplikasi memakai mode demo.
 
 Saat halaman dibuka, pemilih model memuat `GET ${VITE_OLLAMA_BASE_URL}/models`. Chat mengirim `POST ${VITE_OLLAMA_BASE_URL}/chat/completions` dengan riwayat percakapan dan `stream: true`. Pilih model yang sudah terpasang di server Ollama; jika model tersimpan tidak ada, aplikasi memakai model pertama dari daftar.
 
 ### Gambar
 
-Lampiran gambar hanya dikirim ke model yang mendukung vision (misalnya `llava` atau `qwen2.5vl`). Pasang model tersebut di server Ollama dan pilih model itu di aplikasi. Satu pesan dapat membawa satu gambar dengan format JPEG, PNG, atau WebP, ukuran maksimal 5 MB. Gambar dikirim sebagai data URL di bagian `image_url` pada payload pesan.
+Aplikasi tidak mendeteksi kemampuan vision model. Pilih model yang mendukung vision (misalnya `llava`) dan sudah terpasang di server Ollama. Jika model menolak gambar, penolakan dari server tampil sebagai error dengan tombol coba lagi.
+
+Satu pesan dapat membawa satu gambar dengan format JPEG, PNG, atau WebP, ukuran maksimal 5 MiB (5.242.880 byte). Gambar dikirim sebagai data URL di bagian `image_url` pada payload pesan.
 
 ## Kontrak transport
 
