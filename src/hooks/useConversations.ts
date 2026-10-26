@@ -159,13 +159,8 @@ export function useConversations() {
       );
       const conversations =
         remaining.length > 0 ? remaining : [createConversation()];
-      const activeId = conversations.some(
-        (conversation) => conversation.id === previous.activeId,
-      )
-        ? previous.activeId
-        : conversations[0].id;
 
-      return { conversations, activeId };
+      return { conversations, activeId: conversations[0].id };
     });
   }, []);
 
