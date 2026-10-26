@@ -95,7 +95,9 @@ async function streamEventStream(
     const value = line.endsWith("\r") ? line.slice(0, -1) : line;
     if (!value) return processEvent();
 
-    if (value.startsWith("data:")) {
+    if (value === "data") {
+      dataLines.push("");
+    } else if (value.startsWith("data:")) {
       dataLines.push(value.slice(5).replace(/^ /, ""));
     }
 
