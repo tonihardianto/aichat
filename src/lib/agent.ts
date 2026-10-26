@@ -189,6 +189,11 @@ export async function streamReply(
   signal: AbortSignal,
   onToken: (token: string) => void,
 ): Promise<void> {
+  let receivedToken = false;
+  const emitToken = (token: string) => {
+    if (token.trim()) receivedToken = true;
+    onToken(token);
+  };
   const url = import.meta.env.VITE_AGENT_URL?.trim();
 
   if (!url) {
@@ -232,9 +237,11 @@ export async function streamReply(
   ).toLowerCase();
 
   if (contentType.includes("text/event-stream")) {
-    await streamEventStream(response.body, signal, onToken);
-    return;
+    await streamEventStream(response.body, signal, emitToken);
+  } else {
+    await streamText(response.body, signal, emitToken);
   }
 
-  await streamText(response.body, signal, onToken);
+  throwIfAborted(signal);
+  if (!receivedToken) throw new Error("Agen tidak mengirim isi respons.");
 }
