@@ -1,9 +1,16 @@
 export type Role = "user" | "assistant";
 
+export type ImageAttachment = {
+  name: string;
+  type: "image/jpeg" | "image/png" | "image/webp";
+  dataUrl: string;
+};
+
 export type Message = {
   id: string;
   role: Role;
   content: string;
+  image?: ImageAttachment;
   createdAt: string;
 };
 

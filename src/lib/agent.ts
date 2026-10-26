@@ -1,4 +1,5 @@
 import type { Message } from "@/types/chat";
+import { ollamaUrl, toOllamaMessages } from "@/lib/ollama";
 
 const DEMO_DELAY_MS = 35;
 
@@ -184,19 +185,35 @@ async function streamText(
   }
 }
 
-export async function streamReply(
+export function streamReply(
+  messages: Message[],
+  model: string | null,
+  signal: AbortSignal,
+  onToken: (token: string) => void,
+): Promise<void>;
+export function streamReply(
   messages: Message[],
   signal: AbortSignal,
   onToken: (token: string) => void,
+): Promise<void>;
+export async function streamReply(
+  messages: Message[],
+  modelOrSignal: string | null | AbortSignal,
+  signalOrOnToken: AbortSignal | ((token: string) => void),
+  maybeOnToken?: (token: string) => void,
 ): Promise<void> {
+  const model = maybeOnToken ? modelOrSignal as string | null : null;
+  const signal = (maybeOnToken ? signalOrOnToken : modelOrSignal) as AbortSignal;
+  const onToken = (maybeOnToken ?? signalOrOnToken) as (token: string) => void;
   let receivedToken = false;
   const emitToken = (token: string) => {
     if (token.trim()) receivedToken = true;
     onToken(token);
   };
-  const url = import.meta.env.VITE_AGENT_URL?.trim();
+  const baseUrl = import.meta.env.VITE_OLLAMA_BASE_URL?.trim();
+  const legacyUrl = import.meta.env.VITE_AGENT_URL?.trim();
 
-  if (!url) {
+  if (!baseUrl && !legacyUrl) {
     const lastMessage = messages.at(-1)?.content ?? "";
     const reply = `Ini balasan demo untuk: "${lastMessage}".`;
 
@@ -210,14 +227,21 @@ export async function streamReply(
     return;
   }
 
+  if (baseUrl && !model) {
+    throw new Error("Pilih model terlebih dahulu.");
+  }
+
+  const url = baseUrl ? ollamaUrl(baseUrl, "chat/completions") : legacyUrl!;
+  const body = baseUrl
+    ? { model, messages: toOllamaMessages(messages), stream: true }
+    : { messages: messages.map(({ role, content }) => ({ role, content })) };
+
   let response: Response;
   try {
     response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages: messages.map(({ role, content }) => ({ role, content })),
-      }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch (error) {
@@ -244,4 +268,36 @@ export async function streamReply(
 
   throwIfAborted(signal);
   if (!receivedToken) throw new Error("Agen tidak mengirim isi respons.");
+}
+
+export async function listModels(): Promise<string[]> {
+  const baseUrl = import.meta.env.VITE_OLLAMA_BASE_URL?.trim();
+  if (!baseUrl) return [];
+
+  let response: Response;
+  try {
+    response = await fetch(ollamaUrl(baseUrl, "models"));
+  } catch {
+    throw new Error("Gagal memuat daftar model.");
+  }
+
+  if (!response.ok) throw new Error("Gagal memuat daftar model.");
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Daftar model tidak valid.");
+  }
+
+  if (!data || typeof data !== "object" || !Array.isArray((data as { data?: unknown }).data)) {
+    throw new Error("Daftar model tidak valid.");
+  }
+
+  const models = (data as { data: unknown[] }).data;
+  if (!models.every((item) => item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string")) {
+    throw new Error("Daftar model tidak valid.");
+  }
+
+  return models.map((item) => (item as { id: string }).id).sort();
 }
