@@ -83,7 +83,17 @@ export function useChat(
             ),
           }));
         });
-        completed = true;
+        if (controller.signal.aborted) {
+          updateConversationRef.current(conversationId, (current) => ({
+            ...current,
+            messages: current.messages.filter(
+              (message) =>
+                message.id !== assistant.id || message.content.length > 0,
+            ),
+          }));
+        } else {
+          completed = true;
+        }
       } catch (streamError) {
         if (isAbortError(streamError) || controller.signal.aborted) {
           updateConversationRef.current(conversationId, (current) => ({
