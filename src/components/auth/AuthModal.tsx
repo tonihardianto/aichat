@@ -24,8 +24,8 @@ export function AuthModal({ open, onClose, onLogin, onRegister }: AuthModalProps
       setError("Email dan password wajib diisi");
       return;
     }
-    if (password.length < 12) {
-      setError("Password minimal 12 karakter");
+    if (isRegister && password.length < 6) {
+      setError("Password minimal 6 karakter");
       return;
     }
 
@@ -75,11 +75,11 @@ export function AuthModal({ open, onClose, onLogin, onRegister }: AuthModalProps
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-foreground">Password (minimal 12 karakter)</label>
+            <label className="text-xs font-medium text-foreground">Password{isRegister ? " (minimal 6 karakter)" : ""}</label>
             <input
               type="password"
               required
-              minLength={12}
+              minLength={isRegister ? 6 : undefined}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••••••"

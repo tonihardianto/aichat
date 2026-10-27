@@ -56,7 +56,7 @@ func (h *Handlers) HandleRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if errors.Is(err, auth.ErrPasswordTooShort) {
-			observability.WriteError(w, http.StatusBadRequest, "password_too_short", "Password minimal 12 karakter")
+			observability.WriteError(w, http.StatusBadRequest, "password_too_short", "Password minimal 6 karakter")
 			return
 		}
 		if errors.Is(err, auth.ErrInvalidEmail) {

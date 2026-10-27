@@ -113,6 +113,12 @@ type openAIChatRequest struct {
 	Messages  []openAIMessage `json:"messages"`
 	Stream    bool            `json:"stream"`
 	MaxTokens int             `json:"max_tokens,omitempty"`
+
+	StreamOptions *openAIStreamOptions `json:"stream_options,omitempty"`
+}
+
+type openAIStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type openAIChatChunk struct {
@@ -166,10 +172,11 @@ func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []Ch
 	}
 
 	chatReq := openAIChatRequest{
-		Model:     model,
-		Messages:  reqMessages,
-		Stream:    true,
-		MaxTokens: maxTokens,
+		Model:         model,
+		Messages:      reqMessages,
+		Stream:        true,
+		MaxTokens:     maxTokens,
+		StreamOptions: &openAIStreamOptions{IncludeUsage: true},
 	}
 
 	reqBody, err := json.Marshal(chatReq)
@@ -208,10 +215,35 @@ func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []Ch
 		buf := make([]byte, 64*1024)
 		scanner.Buffer(buf, 1024*1024)
 
-		startTime := time.Now()
-		totalTokens := 0
+		var firstTokenTime time.Time
+		deltaCount := 0 // fallback estimate: number of streamed content chunks
 		inputTokens := 0
-		outputTokens := 0
+		usageTokens := 0 // authoritative completion_tokens reported by the server
+		finishReason := ""
+
+		// finish emits the terminal chunk. It runs after the stream ends so the
+		// trailing usage chunk (sent after finish_reason) is included.
+		finish := func() {
+			if finishReason == "" {
+				finishReason = "stop"
+			}
+			outputTokens := usageTokens
+			if outputTokens == 0 {
+				outputTokens = deltaCount
+			}
+			tokensPerSec := 0.0
+			if !firstTokenTime.IsZero() && outputTokens > 0 {
+				if d := time.Since(firstTokenTime).Seconds(); d > 0 {
+					tokensPerSec = float64(outputTokens) / d
+				}
+			}
+			out <- StreamChunk{
+				FinishReason: finishReason,
+				InputTokens:  inputTokens,
+				OutputTokens: outputTokens,
+				TokensPerSec: tokensPerSec,
+			}
+		}
 
 		for scanner.Scan() {
 			select {
@@ -221,29 +253,14 @@ func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []Ch
 			default:
 			}
 
-			line := scanner.Text()
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-
-			if !strings.HasPrefix(line, "data:") {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || !strings.HasPrefix(line, "data:") {
 				continue
 			}
 
 			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 			if data == "[DONE]" {
-				duration := time.Since(startTime).Seconds()
-				tokensPerSec := 0.0
-				if duration > 0 && outputTokens > 0 {
-					tokensPerSec = float64(outputTokens) / duration
-				}
-				out <- StreamChunk{
-					FinishReason: "stop",
-					InputTokens:  inputTokens,
-					OutputTokens: outputTokens,
-					TokensPerSec: tokensPerSec,
-				}
+				finish()
 				return
 			}
 
@@ -254,41 +271,29 @@ func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []Ch
 
 			if chunk.Usage != nil {
 				inputTokens = chunk.Usage.PromptTokens
-				outputTokens = chunk.Usage.CompletionTokens
+				usageTokens = chunk.Usage.CompletionTokens
 			}
 
 			for _, choice := range chunk.Choices {
-				delta := choice.Delta.Content
-				if delta != "" {
-					totalTokens++
-					if outputTokens == 0 {
-						outputTokens = totalTokens
+				if delta := choice.Delta.Content; delta != "" {
+					if firstTokenTime.IsZero() {
+						firstTokenTime = time.Now()
 					}
-					out <- StreamChunk{
-						Delta: delta,
-					}
+					deltaCount++
+					out <- StreamChunk{Delta: delta}
 				}
-
 				if choice.FinishReason != nil && *choice.FinishReason != "" {
-					duration := time.Since(startTime).Seconds()
-					tokensPerSec := 0.0
-					if duration > 0 && outputTokens > 0 {
-						tokensPerSec = float64(outputTokens) / duration
-					}
-					out <- StreamChunk{
-						FinishReason: *choice.FinishReason,
-						InputTokens:  inputTokens,
-						OutputTokens: outputTokens,
-						TokensPerSec: tokensPerSec,
-					}
-					return
+					finishReason = *choice.FinishReason
 				}
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
 			out <- StreamChunk{Error: err}
+			return
 		}
+		// Stream closed without [DONE]
+		finish()
 	}()
 
 	return out, nil

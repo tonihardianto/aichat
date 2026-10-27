@@ -28,7 +28,7 @@ type contextKey string
 const UserContextKey contextKey = "auth_user"
 
 var (
-	ErrPasswordTooShort = errors.New("password must be at least 12 characters")
+	ErrPasswordTooShort = errors.New("password must be at least 6 characters")
 	ErrInvalidEmail     = errors.New("invalid email address")
 )
 
@@ -45,7 +45,7 @@ func NewAuthService(repo repository.Repository, cfg *config.Config) *AuthService
 }
 
 func HashPassword(password string) (string, error) {
-	if len(password) < 12 {
+	if len(password) < 6 {
 		return "", ErrPasswordTooShort
 	}
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

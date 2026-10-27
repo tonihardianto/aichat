@@ -91,7 +91,7 @@ export function MessageBubble({ message, streaming, onRegenerate }: Props) {
             <span className="font-medium animate-pulse">Sedang berpikir...</span>
           </div>
         ) : null}
-        {message.outputTokens !== undefined && <p className="mt-2 text-xs text-muted-foreground">{message.outputTokens} token · {message.tokensPerSecond ?? 0} token/detik</p>}
+        {message.outputTokens !== undefined && <p className="mt-2 text-xs text-muted-foreground">{message.outputTokens} token{message.tokensPerSecond ? ` · ${message.tokensPerSecond.toFixed(1)} token/detik` : ""}</p>}
         {message.content && <MessageFooter className="px-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"><CopyButton value={message.content} />{onRegenerate && <Tooltip><TooltipTrigger asChild><Button type="button" size="icon" variant="ghost" aria-label="Buat ulang jawaban" onClick={onRegenerate} className="size-8"><RefreshCw /></Button></TooltipTrigger><TooltipContent>Buat ulang jawaban</TooltipContent></Tooltip>}</MessageFooter>}
       </>}
     </MessageContent>
