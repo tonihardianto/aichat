@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ollama Chat</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<style>
+:root{--bg:#f3f5f4;--panel:#fff;--ink:#17211f;--mute:#66736f;--line:#d9e0dd;--accent:#1f7a6b;--accent-ink:#fff;--me:#e3ece9;--err:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#12171a;--panel:#192024;--ink:#e4ecea;--mute:#8a9894;--line:#2a343a;--accent:#5fb3a1;--accent-ink:#0e1a17;--me:#22303a;--err:#ff8a80}}
+*{box-sizing:border-box}
+html,body,#root{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.app{display:flex;flex-direction:column;height:100%;max-width:820px;margin:0 auto}
+header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+header h1{font-size:16px;margin:0;font-weight:650;flex:1}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mute)}
+.dot.on{background:var(--accent)}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:8px;padding:6px 12px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.settings{padding:14px 16px;border-bottom:1px solid var(--line);display:grid;gap:10px;background:var(--panel)}
+.settings label{display:grid;gap:4px;font-size:13px;color:var(--mute)}
+.settings input[type=text],.settings input[type=password],.settings textarea,.settings select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%}
+.row{display:flex;gap:8px;align-items:end}
+.row>*{flex:1}.row>button{flex:none}
+.check{display:flex!important;align-items:center;gap:8px;grid-auto-flow:column;justify-content:start}
+.msgs{flex:1;overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;gap:16px}
+.empty{margin:auto;text-align:center;color:var(--mute);max-width:380px}
+.msg{display:flex;flex-direction:column;gap:4px;max-width:88%}
+.msg.user{align-self:flex-end}
+.bubble{white-space:pre-wrap;word-wrap:break-word;padding:10px 13px;border-radius:12px;background:var(--panel);border:1px solid var(--line)}
+.user .bubble{background:var(--me);border-color:transparent}
+.meta{font-size:12px;color:var(--mute)}
+.err{color:var(--err)}
+details.think{font-size:13px;color:var(--mute);border-left:2px solid var(--line);padding-left:10px;margin-bottom:2px}
+details.think pre{white-space:pre-wrap;margin:6px 0 0;font:inherit}
+.cursor{display:inline-block;width:7px;height:1em;background:var(--accent);vertical-align:-2px;margin-left:2px;animation:blink 1s steps(2) infinite}
+@media (prefers-reduced-motion:reduce){.cursor{animation:none}}
+@keyframes blink{50%{opacity:0}}
+.composer{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);padding-bottom:max(12px,env(safe-area-inset-bottom))}
+.composer textarea{flex:1;resize:none;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;max-height:160px}
+.guide{flex:1;overflow-y:auto;padding:18px 16px 28px}
+.guide h2{font-size:17px;margin:0 0 4px}
+.guide>p{color:var(--mute);margin:0 0 18px}
+.guide ol{margin:0;padding:0;list-style:none;display:grid;gap:22px;counter-reset:s}
+.guide li{counter-increment:s;padding-left:34px;position:relative}
+.guide li::before{content:counter(s);position:absolute;left:0;top:0;width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:13px;display:grid;place-items:center}
+.guide h3{font-size:15px;margin:0 0 6px}
+.guide li p{margin:0 0 8px}
+.tabs{display:flex;gap:6px;margin-bottom:8px}
+.tabs button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.code{position:relative;margin:0 0 8px}
+.code pre{margin:0;padding:10px 64px 10px 12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow-x:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.code button{position:absolute;top:6px;right:6px;padding:2px 8px;font-size:12px}
+.note{font-size:13px;color:var(--mute);border-left:2px solid var(--line);padding-left:10px;margin:0 0 8px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const DEFAULTS = {
+  baseUrl: "http://10.20.30.35:11434/v1",
+  model: "qwen3-8b-ctx",
+  apiKey: "",
+  system: "",
+  noThink: true,
+  temperature: ""
+};
+
+function loadSettings() {
+  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("ollama-chat-settings") || "{}") }; }
+  catch (e) { return DEFAULTS; }
+}
+
+// Pisahkan blok <think>...</think> dari jawaban (untuk model yang menulis thinking di content)
+function splitThink(text) {
+  let think = "", answer = text;
+  const open = answer.indexOf("<think>");
+  if (open !== -1) {
+    const close = answer.indexOf("</think>", open);
+    if (close === -1) { think = answer.slice(open + 7); answer = answer.slice(0, open); }
+    else { think = answer.slice(open + 7, close); answer = answer.slice(0, open) + answer.slice(close + 8); }
+  }
+  return { think: think.trim(), answer: answer.replace(/^\s+/, "") };
+}
+
+function Message({ m, streaming }) {
+  const parsed = splitThink(m.content || "");
+  const think = [m.reasoning, parsed.think].filter(Boolean).join("\n");
+  return (
+    <div className={"msg " + m.role}>
+      {think && (
+        <details className="think" open={streaming && !parsed.answer}>
+          <summary>Proses berpikir</summary>
+          <pre>{think}</pre>
+        </details>
+      )}
+      {(parsed.answer || m.role === "user" || m.error) && (
+        <div className="bubble">
+          {parsed.answer}
+          {m.error && <span className="err">{m.error}</span>}
+          {streaming && <span className="cursor" />}
+        </div>
+      )}
+      {streaming && !parsed.answer && !think && <div className="bubble"><span className="cursor" /></div>}
+      {m.stats && <div className="meta">{m.stats}</div>}
+    </div>
+  );
+}
+
+function Code({ text }) {
+  const [ok, setOk] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 1500); } catch (e) {}
+  };
+  return (
+    <div className="code">
+      <pre>{text}</pre>
+      <button onClick={copy}>{ok ? "Tersalin" : "Salin"}</button>
+    </div>
+  );
+}
+
+const INSTALL = {
+  linux: { label: "Linux", code: "curl -fsSL https://ollama.com/install.sh | sh", note: "Skrip ini memasang Ollama dan menjalankannya sebagai service systemd. Butuh sudo." },
+  mac: { label: "macOS", code: "brew install ollama", note: "Atau unduh aplikasinya dari ollama.com/download. Kalau memakai aplikasi, Ollama berjalan dari menu bar." },
+  windows: { label: "Windows", code: "winget install Ollama.Ollama", note: "Atau unduh installer dari ollama.com/download. Setelah terpasang, Ollama berjalan dari system tray." }
+};
+
+const NETWORK = {
+  linux: {
+    code: "sudo systemctl edit ollama",
+    extra: "Di editor yang terbuka, tempel baris berikut, simpan, lalu jalankan:",
+    code2: '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0:11434"\nEnvironment="OLLAMA_ORIGINS=*"\nEnvironment="OLLAMA_CONTEXT_LENGTH=16384"\nEnvironment="OLLAMA_KEEP_ALIVE=-1"',
+    code3: "sudo systemctl restart ollama"
+  },
+  mac: {
+    code: 'launchctl setenv OLLAMA_HOST "0.0.0.0:11434"\nlaunchctl setenv OLLAMA_ORIGINS "*"\nlaunchctl setenv OLLAMA_CONTEXT_LENGTH "16384"\nlaunchctl setenv OLLAMA_KEEP_ALIVE "-1"',
+    extra: "Lalu keluar dari Ollama di menu bar dan buka lagi. Kalau Ollama dijalankan dari terminal, cukup export variabel yang sama sebelum menjalankan ollama serve.",
+    code2: null, code3: null
+  },
+  windows: {
+    code: 'setx OLLAMA_HOST "0.0.0.0:11434"\nsetx OLLAMA_ORIGINS "*"\nsetx OLLAMA_CONTEXT_LENGTH "16384"\nsetx OLLAMA_KEEP_ALIVE "-1"',
+    extra: "Jalankan di Command Prompt, lalu keluar dari Ollama di system tray dan buka lagi supaya variabel terbaca.",
+    code2: null, code3: null
+  }
+};
+
+function Guide({ s, onClose }) {
+  const [os, setOs] = useState("linux");
+  const base = s.baseUrl.replace(/\/$/, "");
+  const host = base.replace(/\/v1$/, "");
+  const inst = INSTALL[os], net = NETWORK[os];
+  const tabs = (
+    <div className="tabs" role="group" aria-label="Sistem operasi">
+      {Object.keys(INSTALL).map((k) => (
+        <button key={k} aria-pressed={os === k} onClick={() => setOs(k)}>{INSTALL[k].label}</button>
+      ))}
+    </div>
+  );
+  return (
+    <div className="guide">
+      <h2>Panduan: pasang Ollama dan unduh model</h2>
+      <p>Jalankan langkah ini di komputer atau server yang akan menjalankan model. Pilih sistem operasinya dulu.</p>
+      {tabs}
+      <ol>
+        <li>
+          <h3>Pasang Ollama</h3>
+          <Code text={inst.code} />
+          <div className="note">{inst.note}</div>
+          <p>Cek hasilnya:</p>
+          <Code text="ollama --version" />
+        </li>
+        <li>
+          <h3>Unduh model</h3>
+          <p>Mulai dari model 8B. Ukurannya sekitar 5 GB dan cukup untuk chat serta tool calling.</p>
+          <Code text="ollama pull qwen3:8b" />
+          <p>Pilihan lain, sesuai RAM yang tersedia:</p>
+          <Code text={"ollama pull qwen3:4b          # lebih ringan, RAM 8 GB\nollama pull qwen3-coder:30b   # khusus coding, butuh RAM sekitar 32 GB"} />
+          <p>Pastikan model terdaftar dan punya kemampuan <b>tools</b> kalau mau dipakai untuk agent:</p>
+          <Code text={"ollama list\nollama show qwen3:8b"} />
+        </li>
+        <li>
+          <h3>Atur akses jaringan dan konteks</h3>
+          <p>Supaya halaman ini bisa terhubung dari komputer lain, Ollama harus mendengar di semua alamat dan mengizinkan origin halaman. Konteks 16384 mencegah prompt panjang terpotong (bawaan Ollama hanya 4096).</p>
+          <Code text={net.code} />
+          {net.extra && <p>{net.extra}</p>}
+          {net.code2 && <Code text={net.code2} />}
+          {net.code3 && <Code text={net.code3} />}
+          <div className="note">OLLAMA_ORIGINS=* dan 0.0.0.0 membuat Ollama bisa dipakai siapa pun di jaringan tanpa login. Gunakan hanya di jaringan tertutup. Kalau Ollama dan halaman ini ada di komputer yang sama, langkah ini boleh dilewati.</div>
+        </li>
+        <li>
+          <h3>Tes dari komputer lain</h3>
+          <p>Ganti alamat dengan alamat server Anda kalau berbeda. Daftar model harus muncul:</p>
+          <Code text={"curl " + base + "/models"} />
+          <p>Tes chat dengan streaming (keluarannya berupa baris <code>data: ...</code>):</p>
+          <Code text={"curl -N " + base + "/chat/completions \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"qwen3:8b\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"halo\"}]}'"} />
+        </li>
+        <li>
+          <h3>Sambungkan ke aplikasi ini</h3>
+          <p>Buka <b>Pengaturan</b>, isi Base URL dengan <code>{base}</code>, tekan <b>Muat model</b>, lalu pilih model yang sudah diunduh. Indikator di pojok kiri atas menjadi hijau kalau terhubung.</p>
+          <button className="primary" onClick={onClose}>Mulai chat</button>
+        </li>
+      </ol>
+    </div>
+  );
+}
+
+function App() {
+  const [s, setS] = useState(loadSettings);
+  const [open, setOpen] = useState(false);
+  const [page, setPage] = useState("chat");
+  const [models, setModels] = useState([]);
+  const [msgs, setMsgs] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [online, setOnline] = useState(null);
+  const abortRef = useRef(null);
+  const endRef = useRef(null);
+
+  useEffect(() => {
+    try { localStorage.setItem("ollama-chat-settings", JSON.stringify(s)); } catch (e) {}
+  }, [s]);
+  useEffect(() => { endRef.current && endRef.current.scrollIntoView({ block: "end" }); }, [msgs]);
+
+  const set = (k) => (e) => setS({ ...s, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+  const headers = () => {
+    const h = { "Content-Type": "application/json" };
+    if (s.apiKey) h.Authorization = "Bearer " + s.apiKey;
+    return h;
+  };
+
+  const loadModels = useCallback(async () => {
+    try {
+      const r = await fetch(s.baseUrl.replace(/\/$/, "") + "/models", { headers: headers() });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      setModels(j.data.map((d) => d.id));
+      setOnline(true);
+    } catch (e) { setOnline(false); setModels([]); }
+  }, [s.baseUrl, s.apiKey]);
+
+  useEffect(() => { loadModels(); }, []);
+
+  const patchLast = (fn) => setMsgs((prev) => prev.map((m, i) => (i === prev.length - 1 ? fn(m) : m)));
+
+  async function send() {
+    const text = input.trim();
+    if (!text || busy) return;
+    const history = [...msgs, { role: "user", content: text }];
+    setMsgs([...history, { role: "assistant", content: "", reasoning: "" }]);
+    setInput("");
+    setBusy(true);
+
+    const payload = {
+      model: s.model,
+      stream: true,
+      messages: [
+        ...(s.system ? [{ role: "system", content: s.system }] : []),
+        ...history.map((m) => ({ role: m.role, content: splitThink(m.content).answer }))
+      ]
+    };
+    if (s.noThink) payload.reasoning_effort = "none";
+    if (s.temperature !== "") payload.temperature = Number(s.temperature);
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    const t0 = performance.now();
+    let chunks = 0;
+
+    try {
+      const res = await fetch(s.baseUrl.replace(/\/$/, "") + "/chat/completions", {
+        method: "POST", headers: headers(), body: JSON.stringify(payload), signal: ctrl.signal
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status + " " + (await res.text()).slice(0, 300));
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          const l = line.trim();
+          if (!l.startsWith("data:")) continue;
+          const data = l.slice(5).trim();
+          if (data === "[DONE]") continue;
+          let j; try { j = JSON.parse(data); } catch (e) { continue; }
+          if (j.error) throw new Error(typeof j.error === "string" ? j.error : j.error.message);
+          const d = j.choices && j.choices[0] && j.choices[0].delta;
+          if (!d) continue;
+          const c = d.content || "";
+          const r = d.reasoning || d.reasoning_content || "";
+          if (c || r) { chunks++; patchLast((m) => ({ ...m, content: m.content + c, reasoning: (m.reasoning || "") + r })); }
+        }
+      }
+      const sec = (performance.now() - t0) / 1000;
+      patchLast((m) => ({ ...m, stats: sec.toFixed(1) + " dtk, ~" + (chunks / sec).toFixed(1) + " token/dtk" }));
+      setOnline(true);
+    } catch (e) {
+      if (e.name === "AbortError") patchLast((m) => ({ ...m, stats: "Dihentikan" }));
+      else {
+        setOnline(false);
+        patchLast((m) => ({ ...m, error: (m.content ? "\n\n" : "") + "Gagal: " + e.message +
+          (e.message === "Failed to fetch" ? ". Cek alamat server, dan pastikan Ollama mengizinkan origin halaman ini (OLLAMA_ORIGINS)." : "") }));
+      }
+    } finally { setBusy(false); abortRef.current = null; }
+  }
+
+  const onKey = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+
+  return (
+    <div className="app">
+      <header>
+        <span className={"dot" + (online ? " on" : "")} title={online ? "Terhubung" : "Belum terhubung"} />
+        <h1>Ollama Chat · {s.model}</h1>
+        <button onClick={() => setMsgs([])} disabled={busy || !msgs.length}>Percakapan baru</button>
+        <button onClick={() => setPage(page === "guide" ? "chat" : "guide")} aria-pressed={page === "guide"}>Panduan</button>
+        <button onClick={() => setOpen(!open)} aria-expanded={open}>Pengaturan</button>
+      </header>
+
+      {open && (
+        <div className="settings">
+          <label>Base URL
+            <input type="text" value={s.baseUrl} onChange={set("baseUrl")} />
+          </label>
+          <div className="row">
+            <label>Model
+              {models.length ? (
+                <select value={s.model} onChange={set("model")}>
+                  {!models.includes(s.model) && <option>{s.model}</option>}
+                  {models.map((m) => <option key={m}>{m}</option>)}
+                </select>
+              ) : <input type="text" value={s.model} onChange={set("model")} />}
+            </label>
+            <button onClick={loadModels}>Muat model</button>
+          </div>
+          <label>API key (kosongkan kalau tidak perlu)
+            <input type="password" value={s.apiKey} onChange={set("apiKey")} autoComplete="off" />
+          </label>
+          <label>System prompt
+            <textarea rows="2" value={s.system} onChange={set("system")} />
+          </label>
+          <div className="row">
+            <label>Temperature (kosong = default model)
+              <input type="text" inputMode="decimal" value={s.temperature} onChange={set("temperature")} />
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={s.noThink} onChange={set("noThink")} />
+              Matikan thinking (reasoning_effort: none)
+            </label>
+          </div>
+        </div>
+      )}
+
+      {page === "guide" ? <Guide s={s} onClose={() => setPage("chat")} /> : (<>
+      <div className="msgs" role="log" aria-live="polite">
+        {!msgs.length && (
+          <div className="empty">Tulis pesan untuk mulai. Jawaban muncul bertahap saat model menghasilkannya.</div>
+        )}
+        {msgs.map((m, i) => <Message key={i} m={m} streaming={busy && i === msgs.length - 1} />)}
+        <div ref={endRef} />
+      </div>
+
+      <div className="composer">
+        <textarea rows="1" value={input} placeholder="Tulis pesan…" onChange={(e) => setInput(e.target.value)} onKeyDown={onKey} aria-label="Pesan" />
+        {busy
+          ? <button onClick={() => abortRef.current && abortRef.current.abort()}>Hentikan</button>
+          : <button className="primary" onClick={send} disabled={!input.trim()}>Kirim</button>}
+      </div>
+      </>)}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 type ModelSelectProps = {
   models: string[];
@@ -8,6 +9,7 @@ type ModelSelectProps = {
   isDemo: boolean;
   onChange: (model: string) => void;
   onReload: () => void;
+  guestMode?: boolean;
 };
 
 export function ModelSelect({
@@ -18,31 +20,35 @@ export function ModelSelect({
   isDemo,
   onChange,
   onReload,
+  guestMode = false,
 }: ModelSelectProps) {
   if (isDemo) {
-    return <span role="status" className="text-xs text-muted-foreground">Mode demo</span>;
+    return <span role="status" className="inline-flex items-center rounded-md bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">Mode demo</span>;
   }
 
   return <div className="flex min-w-0 flex-wrap items-center gap-1">
-    <label htmlFor="model" className="sr-only">Model</label>
-    <select
+    {!guestMode && <label htmlFor="model" className="sr-only">Model</label>}
+      {!guestMode && <select
       id="model"
+      aria-label="Model Ollama"
       value={value ?? ""}
       disabled={loading || models.length === 0}
       onChange={(event) => onChange(event.target.value)}
-      className="h-8 max-w-32 rounded-md border bg-background px-2 text-xs"
+      className="h-9 max-w-40 rounded-lg border bg-background px-3 text-xs transition-colors hover:bg-accent/50"
     >
       {loading ? <option value="">Memuat model...</option> : models.length === 0 ? <option value="">Model tidak tersedia</option> : models.map((model) => <option key={model} value={model}>{model}</option>)}
-    </select>
-    <button
+      </select>}
+    {!guestMode && <Button
       type="button"
       onClick={onReload}
       disabled={loading}
       aria-label="Muat ulang model"
-      className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border hover:bg-accent disabled:opacity-50"
+      variant="ghost"
+      size="icon"
+      className="size-9 shrink-0"
     >
       <RefreshCw className={loading ? "size-4 animate-spin" : "size-4"} />
-    </button>
-    {error && <span role="alert" className="basis-full text-xs text-destructive">{error} <button type="button" onClick={onReload} className="underline">Muat ulang</button></span>}
+    </Button>}
+    {error && <span role="alert" className="basis-full text-xs text-destructive">{error} <Button type="button" onClick={onReload} variant="link" size="sm" className="h-auto p-0 text-xs">Muat ulang</Button></span>}
   </div>;
 }

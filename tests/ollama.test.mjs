@@ -19,11 +19,23 @@ test("toOllamaMessages emits text and image_url parts", () => {
   }]);
 });
 
+test("usageFromValue reads exact completion tokens from final usage chunk", async () => {
+  const server = await createServer({ configFile: "vite.config.ts", server: { middlewareMode: true } });
+  try {
+    const { usageFromValue } = await server.ssrLoadModule("/src/lib/agent.ts");
+    assert.deepEqual(usageFromValue({ usage: { completion_tokens: 7 }, eval_duration: 1000000000 }), { outputTokens: 7, durationNs: 1000000000 });
+  } finally {
+    await server.close();
+  }
+});
+
 test("tokenFromValue reads OpenAI chat completion SSE delta content", async () => {
   const server = await createServer({ configFile: "vite.config.ts", server: { middlewareMode: true } });
   try {
     const { tokenFromValue } = await server.ssrLoadModule("/src/lib/agent.ts");
     assert.equal(tokenFromValue({ choices: [{ delta: { content: "token" } }] }), "token");
+    const { usageFromValue } = await server.ssrLoadModule("/src/lib/agent.ts");
+    assert.deepEqual(usageFromValue({ usage: { completion_tokens: 7 } }), { outputTokens: 7 });
   } finally {
     await server.close();
   }

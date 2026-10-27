@@ -1,10 +1,12 @@
 import { useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy, RefreshCw } from "lucide-react";
+import { Check, Copy, RefreshCw, Sparkles } from "lucide-react";
 import type { Message } from "@/types/chat";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Message as MessageRoot, MessageContent, MessageFooter } from "@/components/ui/message";
 
 type Props = { message: Message; streaming?: boolean; onRegenerate?: () => void };
 
@@ -18,9 +20,35 @@ function CopyButton({ value, label = "Salin" }: { value: string; label?: string 
 
 const markdownComponents: Components = {
   code({ className, children, ...props }) {
-    const block = Boolean(className);
-    const value = String(children).replace(/\n$/, "");
-    return block ? <div className="my-3 overflow-hidden rounded-lg border bg-slate-950 text-slate-100"><div className="flex items-center justify-between border-b border-white/10 px-3 py-1 text-xs text-slate-300"><span>{className?.replace("language-", "") || "Kode"}</span><CopyButton value={value} /></div><pre className="overflow-x-auto p-4 text-sm"><code className={className} {...props}>{children}</code></pre></div> : <code className="rounded bg-muted px-1.5 py-0.5 text-[0.9em]" {...props}>{children}</code>;
+    const raw =
+      typeof children === "string"
+        ? children
+        : Array.isArray(children)
+          ? children.join("")
+          : String(children ?? "");
+    const value = raw.replace(/\n$/, "");
+    const isMultiLine = raw.includes("\n");
+    const hasLanguage = Boolean(className && className.startsWith("language-"));
+    const block = hasLanguage || isMultiLine;
+    const language = className?.replace("language-", "") || "Kode";
+
+    return block ? (
+      <div className="my-3 overflow-hidden rounded-lg border bg-slate-950 text-slate-100">
+        <div className="flex items-center justify-between border-b border-white/10 px-3 py-1 text-xs text-slate-300">
+          <span>{language}</span>
+          <CopyButton value={value} />
+        </div>
+        <pre className="overflow-x-auto p-4 text-sm font-mono leading-relaxed">
+          <code className={className} {...props}>
+            {children}
+          </code>
+        </pre>
+      </div>
+    ) : (
+      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.9em]" {...props}>
+        {children}
+      </code>
+    );
   },
   a: ({ ...props }) => <a {...props} className="text-primary underline underline-offset-4" />,
   table: ({ ...props }) => <div className="overflow-x-auto"><table {...props} /></div>,
@@ -28,11 +56,45 @@ const markdownComponents: Components = {
 
 export function MessageBubble({ message, streaming, onRegenerate }: Props) {
   const user = message.role === "user";
-  return <article aria-label={user ? "Pesan Anda" : "Jawaban asisten"} className={`group flex w-full ${user ? "justify-end" : "justify-start"}`}>
-    <div className={`min-w-0 max-w-[min(88%,760px)] ${user ? "rounded-2xl bg-blue-600 px-4 py-3 text-white" : "w-full py-2"}`}>
-      {user && message.image && <img src={message.image.dataUrl} alt={`Lampiran ${message.image.name}`} className="mb-2 max-h-72 rounded-md object-contain" />}
-      {message.content ? <div className={`markdown-content break-words ${user ? "[&_a]:text-white [&_code]:text-foreground" : ""}`}><ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.content}</ReactMarkdown></div> : streaming ? <div className="flex h-8 items-center gap-1" role="status" aria-label="Menulis"><span className="typing-dot"/><span className="typing-dot [animation-delay:150ms]"/><span className="typing-dot [animation-delay:300ms]"/></div> : null}
-      {!user && message.content && <TooltipProvider delayDuration={300}><div className="mt-1 flex items-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"><CopyButton value={message.content} />{onRegenerate && <Tooltip><TooltipTrigger asChild><Button type="button" size="icon" variant="ghost" aria-label="Buat ulang jawaban" onClick={onRegenerate} className="size-8"><RefreshCw /></Button></TooltipTrigger><TooltipContent>Buat ulang jawaban</TooltipContent></Tooltip>}</div></TooltipProvider>}
-    </div>
-  </article>;
+  return (
+    <TooltipProvider delayDuration={300}>
+      <MessageRoot align={user ? "end" : "start"} aria-label={user ? "Pesan Anda" : "Jawaban asisten"} className="group">
+    {/* {!user && <MessageAvatar aria-hidden="true" className="self-start"><span className="text-xs font-semibold">AI</span></MessageAvatar>} */}
+    <MessageContent className={user ? "flex w-fit max-w-[80%]" : "py-1"}>
+      {user ? <Bubble align="end" variant="default"><BubbleContent className="markdown-content break-words">
+        {message.image && <img src={message.image.dataUrl} alt={`Lampiran ${message.image.name}`} className="mb-2 max-h-72 rounded-md object-contain" />}
+        {message.content && <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.content}</ReactMarkdown>}
+      </BubbleContent></Bubble> : <>
+        {message.content ? (
+          <Bubble align="start" variant="ghost">
+            <BubbleContent className="markdown-content break-words">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {message.content}
+              </ReactMarkdown>
+              {streaming && (
+                <span className="ml-1 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-xs bg-primary" />
+              )}
+            </BubbleContent>
+          </Bubble>
+        ) : streaming ? (
+          <div
+            className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground shadow-xs"
+            role="status"
+            aria-label="Sedang berpikir"
+          >
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-primary" />
+            </span>
+            <Sparkles className="size-3.5 animate-pulse text-primary" />
+            <span className="font-medium animate-pulse">Sedang berpikir...</span>
+          </div>
+        ) : null}
+        {message.outputTokens !== undefined && <p className="mt-2 text-xs text-muted-foreground">{message.outputTokens} token · {message.tokensPerSecond ?? 0} token/detik</p>}
+        {message.content && <MessageFooter className="px-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"><CopyButton value={message.content} />{onRegenerate && <Tooltip><TooltipTrigger asChild><Button type="button" size="icon" variant="ghost" aria-label="Buat ulang jawaban" onClick={onRegenerate} className="size-8"><RefreshCw /></Button></TooltipTrigger><TooltipContent>Buat ulang jawaban</TooltipContent></Tooltip>}</MessageFooter>}
+      </>}
+    </MessageContent>
+  </MessageRoot>
+</TooltipProvider>
+  );
 }

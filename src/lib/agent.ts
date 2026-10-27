@@ -60,6 +60,26 @@ export function tokenFromValue(value: unknown): string {
   return "";
 }
 
+export function usageFromValue(value: unknown): { outputTokens: number; durationNs?: number } | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { usage?: { completion_tokens?: unknown }; timings?: { predicted_per_second?: unknown }; eval_duration?: unknown };
+  const outputTokens = record.usage?.completion_tokens;
+  if (typeof outputTokens !== "number") return null;
+  const rate = record.timings?.predicted_per_second;
+  const durationNs = typeof record.eval_duration === "number"
+    ? record.eval_duration
+    : typeof rate === "number" && rate > 0 ? outputTokens / rate * 1e9 : undefined;
+  return { outputTokens, ...(durationNs !== undefined ? { durationNs } : {}) };
+}
+
+function usageFromData(data: string): number | null {
+  try {
+    return usageFromValue(JSON.parse(data))?.outputTokens ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function tokenFromData(data: string): string {
   try {
     return tokenFromValue(JSON.parse(data));
@@ -72,6 +92,7 @@ async function streamEventStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
   onToken: (token: string) => void,
+  onUsage: (tokens: number, durationNs?: number) => void,
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -91,6 +112,11 @@ async function streamEventStream(
     throwIfAborted(signal);
     const token = tokenFromData(data);
     if (token) onToken(token);
+    const usage = usageFromData(data);
+    if (usage !== null) {
+      const { outputTokens, durationNs } = usageFromValue(JSON.parse(data))!;
+      onUsage(outputTokens, durationNs);
+    }
     return false;
   };
 
@@ -192,6 +218,7 @@ export function streamReply(
   model: string | null,
   signal: AbortSignal,
   onToken: (token: string) => void,
+  onUsage?: (tokens: number, durationNs?: number) => void,
 ): Promise<void>;
 export function streamReply(
   messages: Message[],
@@ -203,6 +230,7 @@ export async function streamReply(
   modelOrSignal: string | null | AbortSignal,
   signalOrOnToken: AbortSignal | ((token: string) => void),
   maybeOnToken?: (token: string) => void,
+  onUsage: (tokens: number, durationNs?: number) => void = () => {},
 ): Promise<void> {
   const model = maybeOnToken ? modelOrSignal as string | null : null;
   const signal = (maybeOnToken ? signalOrOnToken : modelOrSignal) as AbortSignal;
@@ -235,7 +263,7 @@ export async function streamReply(
 
   const url = baseUrl ? ollamaUrl(baseUrl, "chat/completions") : legacyUrl!;
   const body = baseUrl
-    ? { model, messages: toOllamaMessages(messages), stream: true }
+    ? { model, messages: toOllamaMessages(messages), stream: true, stream_options: { include_usage: true, include_timings: true } }
     : { messages: messages.map(({ role, content }) => ({ role, content })) };
 
   let response: Response;
@@ -263,7 +291,7 @@ export async function streamReply(
   ).toLowerCase();
 
   if (contentType.includes("text/event-stream")) {
-    await streamEventStream(response.body, signal, emitToken);
+    await streamEventStream(response.body, signal, emitToken, onUsage);
   } else {
     await streamText(response.body, signal, emitToken);
   }

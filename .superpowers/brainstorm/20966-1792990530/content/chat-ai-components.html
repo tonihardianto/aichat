@@ -1,0 +1,37 @@
+<h2>Chat app — shadcn AI Components</h2>
+<p class="subtitle">Preview direction for replacing current chat UI with shadcn AI components throughout.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Current app adapted with AI primitives</div>
+  <div class="mockup-body" style="font-family:system-ui;max-width:860px;margin:auto;border:1px solid #d7dce2;border-radius:12px;overflow:hidden;background:#fff;color:#20242a">
+    <div style="display:flex;min-height:440px">
+      <aside style="width:190px;background:#f6f7f8;padding:18px;border-right:1px solid #e1e4e8">
+        <strong style="font-size:14px">Percakapan</strong>
+        <div style="margin:16px 0;padding:9px;border-radius:8px;background:#e8ebef;font-size:12px">+ Chat baru</div>
+        <div style="font-size:12px;color:#58616b;line-height:2.5">Percakapan baru<br>Ide aplikasi<br>Debug kode</div>
+      </aside>
+      <main style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <header style="height:48px;border-bottom:1px solid #e1e4e8;padding:14px 18px;font-size:13px">Chat baru <span style="float:right;color:#66717d">Ollama ▾</span></header>
+        <section style="flex:1;padding:28px 24px">
+          <div style="max-width:540px;margin:0 auto">
+            <div style="font-size:20px;font-weight:600;margin:0 0 22px">Apa yang ingin kamu buat?</div>
+            <div style="display:flex;gap:10px;margin-bottom:18px;justify-content:flex-end"><div style="background:#f0f1f3;border-radius:12px;padding:12px 15px;font-size:13px">Bantu buat ringkasan dokumen ini.</div></div>
+            <div style="display:flex;gap:10px;font-size:13px;line-height:1.65"><div style="width:25px;height:25px;background:#e9ebee;border-radius:50%;text-align:center;line-height:25px">✦</div><div><b>Asisten</b><br>Tentu. Unggah dokumennya, lalu aku bantu merangkum poin utama dan tindakan yang perlu diperhatikan.</div></div>
+            <div style="margin-top:22px;display:flex;gap:8px;flex-wrap:wrap"><span style="border:1px solid #dfe3e7;border-radius:18px;padding:7px 11px;font-size:11px">Ringkas teks</span><span style="border:1px solid #dfe3e7;border-radius:18px;padding:7px 11px;font-size:11px">Bantu menulis</span><span style="border:1px solid #dfe3e7;border-radius:18px;padding:7px 11px;font-size:11px">Jelaskan kode</span></div>
+          </div>
+        </section>
+        <footer style="padding:12px 18px 14px"><div style="max-width:590px;margin:auto;border:1px solid #d3d8de;border-radius:12px;padding:12px"><div style="color:#747c85;font-size:13px">Tulis pesan... </div><div style="margin-top:18px;font-size:12px;color:#6a737d">＋　 Model ▾ <span style="float:right;background:#222;color:#fff;border-radius:7px;padding:5px 9px">↑</span></div></div><div style="text-align:center;color:#78818a;font-size:10px;margin-top:8px">AI dapat membuat kesalahan. Periksa informasi penting.</div></footer>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px">
+  <h3>Komponen yang akan dipakai</h3>
+  <p>Message, conversation, prompt input, model selector, attachment, loading/streaming, tool output, suggestion chips, dan state kosong/error — sambil mempertahankan alur Ollama dan fitur gambar yang sudah ada.</p>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="ai-complete" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>AI components menyeluruh</h3><p>Ganti semua area chat yang relevan: pesan, composer, status streaming, prompt suggestions, dan elemen model.</p></div></div>
+  <div class="option" data-choice="ai-primitives" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>Fokus percakapan</h3><p>Pakai komponen AI untuk pesan dan composer saja; navigasi/sidebar dan kontrol model tetap seperti sekarang.</p></div></div>
+</div>
