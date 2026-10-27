@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LogOut, MoreHorizontal, Pencil, Plus, Trash2, User as UserIcon, MessageSquare } from "lucide-react";
+import { LogOut, MoreHorizontal, Pencil, Plus, Trash2, User as UserIcon, Sparkles } from "lucide-react";
 import type { Conversation } from "@/types/chat";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,8 +41,8 @@ export function Sidebar({
   return (
     <aside className="flex h-full w-full flex-col bg-card p-3">
       <div className="mb-5 flex items-center gap-2 px-2 py-1.5">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <MessageSquare className="size-4" />
+        <div className="flex size-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-500 text-primary-foreground shadow-sm">
+          <Sparkles className="size-4" />
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">AI Chat</p>
@@ -52,13 +52,13 @@ export function Sidebar({
       {!guestMode && <Button className="w-full justify-start gap-2" variant="outline" onClick={onNew}>
         <Plus />Percakapan baru
       </Button>}
-      {guestMode ? <p className="px-2 pb-2 pt-6 text-xs text-muted-foreground">Riwayat tamu hanya tersedia selama sesi ini.</p> : <h2 className="px-2 pb-2 pt-6 text-xs font-medium text-muted-foreground">Percakapan</h2>}
+      {guestMode ? <p className="px-2 pb-2 pt-6 text-xs text-muted-foreground">Riwayat tamu hanya tersedia selama sesi ini.</p> : <h2 className="px-2 pb-2 pt-6 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Percakapan</h2>}
       <nav aria-label={guestMode ? "Percakapan sementara" : "Riwayat percakapan"} className="min-h-0 flex-1 space-y-1 overflow-y-auto">
         {conversations.map((conversation) => (
           <div
             key={conversation.id}
             className={`group flex items-center rounded-lg transition-colors ${
-              activeId === conversation.id ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"
+              activeId === conversation.id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             }`}
           >
             {!guestMode && renaming === conversation.id ? (

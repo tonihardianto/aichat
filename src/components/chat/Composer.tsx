@@ -250,7 +250,7 @@ export function Composer({
         tabIndex={-1}
         onChange={readImage}
       />}
-      <InputGroup className="mx-auto max-w-[920px] transition-colors focus-within:border-ring">
+      <InputGroup className="mx-auto max-w-[920px] rounded-2xl bg-card shadow-md transition-all focus-within:border-primary/50 focus-within:shadow-lg focus-within:ring-4 focus-within:ring-primary/10">
         {!guestMode && image && (
           <InputGroupAddon align="block-start" className="flex-wrap">
             <Attachment size="sm">

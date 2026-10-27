@@ -4,75 +4,87 @@
 
 @layer base {
   :root {
-    --background: 210 20% 99%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --background: 0 0% 100%;
+    --foreground: 240 10% 10%;
+    --card: 240 20% 98%;
+    --card-foreground: 240 10% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 217 91% 50%;
+    --popover-foreground: 240 10% 10%;
+    --primary: 245 75% 58%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 214 32% 94%;
-    --secondary-foreground: 222 47% 15%;
-    --muted: 214 32% 95%;
-    --muted-foreground: 215 16% 45%;
-    --accent: 214 32% 93%;
-    --accent-foreground: 222 47% 11%;
+    --secondary: 240 14% 95%;
+    --secondary-foreground: 240 10% 15%;
+    --muted: 240 14% 95%;
+    --muted-foreground: 240 6% 42%;
+    --accent: 240 14% 93%;
+    --accent-foreground: 240 10% 10%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 214 25% 88%;
-    --input: 214 25% 88%;
-    --ring: 217 91% 50%;
+    --border: 240 12% 90%;
+    --input: 240 12% 90%;
+    --ring: 245 75% 58%;
     --radius: 0.75rem;
+    --code-bg: 240 20% 98%;
+    --hl-text: 240 10% 20%; --hl-comment: 240 5% 50%; --hl-keyword: 270 60% 45%;
+    --hl-string: 145 60% 30%; --hl-number: 25 90% 42%; --hl-func: 220 80% 45%;
+    --hl-type: 40 85% 35%; --hl-attr: 175 70% 28%; --hl-tag: 345 70% 45%; --hl-meta: 195 80% 35%;
     color-scheme: light;
   }
 
   /* Mirrors .dark; used when no runtime theme toggle has set a class. */
   @media (prefers-color-scheme: dark) {
     :root:not(.light) {
-      --background: 222 47% 8%;
-      --foreground: 210 40% 96%;
-      --card: 222 47% 8%;
-      --card-foreground: 210 40% 96%;
-      --popover: 222 47% 8%;
-      --popover-foreground: 210 40% 96%;
-      --primary: 217 91% 60%;
-      --primary-foreground: 222 47% 8%;
-      --secondary: 217 33% 17%;
-      --secondary-foreground: 210 40% 96%;
-      --muted: 217 33% 17%;
-      --muted-foreground: 215 20% 65%;
-      --accent: 217 33% 17%;
-      --accent-foreground: 210 40% 96%;
-      --destructive: 0 62.8% 30.6%;
+      --background: 240 8% 7%;
+      --foreground: 240 10% 94%;
+      --card: 240 8% 9%;
+      --card-foreground: 240 10% 94%;
+      --popover: 240 8% 10%;
+      --popover-foreground: 240 10% 94%;
+      --primary: 245 85% 68%;
+      --primary-foreground: 240 8% 7%;
+      --secondary: 240 6% 15%;
+      --secondary-foreground: 240 10% 94%;
+      --muted: 240 6% 15%;
+      --muted-foreground: 240 5% 64%;
+      --accent: 240 6% 17%;
+      --accent-foreground: 240 10% 94%;
+      --destructive: 0 62.8% 45%;
       --destructive-foreground: 0 0% 98%;
-      --border: 217 33% 20%;
-      --input: 217 33% 20%;
-      --ring: 217 91% 60%;
+      --border: 240 6% 18%;
+      --input: 240 6% 18%;
+      --ring: 245 85% 68%;
+      --code-bg: 240 10% 6%;
+      --hl-text: 230 20% 90%; --hl-comment: 225 12% 48%; --hl-keyword: 275 70% 78%;
+      --hl-string: 90 50% 63%; --hl-number: 24 100% 69%; --hl-func: 222 90% 72%;
+      --hl-type: 38 70% 66%; --hl-attr: 168 55% 65%; --hl-tag: 350 90% 71%; --hl-meta: 195 100% 74%;
       color-scheme: dark;
     }
   }
 
   .dark {
-    --background: 222 47% 8%;
-    --foreground: 210 40% 96%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 210 40% 96%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 210 40% 96%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 8%;
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 96%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 96%;
-    --destructive: 0 62.8% 30.6%;
+    --background: 240 8% 7%;
+    --foreground: 240 10% 94%;
+    --card: 240 8% 9%;
+    --card-foreground: 240 10% 94%;
+    --popover: 240 8% 10%;
+    --popover-foreground: 240 10% 94%;
+    --primary: 245 85% 68%;
+    --primary-foreground: 240 8% 7%;
+    --secondary: 240 6% 15%;
+    --secondary-foreground: 240 10% 94%;
+    --muted: 240 6% 15%;
+    --muted-foreground: 240 5% 64%;
+    --accent: 240 6% 17%;
+    --accent-foreground: 240 10% 94%;
+    --destructive: 0 62.8% 45%;
     --destructive-foreground: 0 0% 98%;
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
-    --ring: 217 91% 60%;
+    --border: 240 6% 18%;
+    --input: 240 6% 18%;
+    --ring: 245 85% 68%;
+    --code-bg: 240 10% 6%;
+    --hl-text: 230 20% 90%; --hl-comment: 225 12% 48%; --hl-keyword: 275 70% 78%;
+    --hl-string: 90 50% 63%; --hl-number: 24 100% 69%; --hl-func: 222 90% 72%;
+    --hl-type: 38 70% 66%; --hl-attr: 168 55% 65%; --hl-tag: 350 90% 71%; --hl-meta: 195 100% 74%;
     color-scheme: dark;
   }
 }
@@ -82,11 +94,34 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-feature-settings: "cv11", "ss01";
   }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); background-clip: content-box; border: 2px solid transparent; }
   html, body, #root { min-width: 360px; min-height: 100%; }
   :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
-  .markdown-content { line-height: 1.7; }
+  .markdown-content { line-height: 1.75; }
+  .markdown-content :is(h1,h2,h3,h4) { font-weight: 600; margin-block: 1.25rem 0.5rem; line-height: 1.3; }
+  .markdown-content h1 { font-size: 1.25rem; } .markdown-content h2 { font-size: 1.125rem; } .markdown-content h3 { font-size: 1rem; }
+  .markdown-content li { margin-block: 0.2rem; }
+  .markdown-content th { background: hsl(var(--muted)); font-weight: 600; text-align: left; }
+  .markdown-content table { border-collapse: collapse; font-size: 0.875rem; }
+  /* Syntax highlighting: colors come from --hl-* variables (light/dark aware) */
+  .hljs { color: hsl(var(--hl-text)); background: transparent; }
+  .hljs-comment, .hljs-quote { color: hsl(var(--hl-comment)); font-style: italic; }
+  .hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-doctag { color: hsl(var(--hl-keyword)); }
+  .hljs-string, .hljs-regexp, .hljs-addition { color: hsl(var(--hl-string)); }
+  .hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet { color: hsl(var(--hl-number)); }
+  .hljs-title, .hljs-section, .hljs-title.function_ { color: hsl(var(--hl-func)); }
+  .hljs-type, .hljs-class .hljs-title, .hljs-title.class_ { color: hsl(var(--hl-type)); }
+  .hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable, .hljs-property { color: hsl(var(--hl-attr)); }
+  .hljs-tag, .hljs-name, .hljs-selector-class, .hljs-selector-id, .hljs-deletion { color: hsl(var(--hl-tag)); }
+  .hljs-meta { color: hsl(var(--hl-meta)); }
+  .hljs-emphasis { font-style: italic; } .hljs-strong { font-weight: 600; }
+  .hero-glow { background: radial-gradient(60% 50% at 50% 0%, hsl(var(--primary) / 0.12), transparent 70%); }
   .markdown-content > :first-child { margin-top: 0; }
   .markdown-content > :last-child { margin-bottom: 0; }
   .markdown-content :is(p, ul, ol, blockquote, pre, table) { margin-block: 0.75rem; }

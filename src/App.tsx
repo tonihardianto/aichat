@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LogIn, Menu, MessageSquare } from "lucide-react";
+import { LogIn, Menu } from "lucide-react";
 import { useChat } from "@/hooks/useChat";
 import { useConversations } from "@/hooks/useConversations";
 import { useAuth } from "@/hooks/useAuth";
@@ -79,7 +79,7 @@ export default function App() {
           <Sidebar {...sidebarProps} />
         </div>
         <section aria-label="Chat" className="flex min-w-0 flex-1 flex-col">
-          <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b bg-background/95 px-3 py-2 md:px-5">
+          <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b bg-background/80 px-3 py-2 backdrop-blur md:px-5">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>
                 <Button className="md:hidden" variant="ghost" size="icon" aria-label="Buka riwayat">
@@ -91,13 +91,7 @@ export default function App() {
                 <Sidebar {...sidebarProps} />
               </SheetContent>
             </Sheet>
-            <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="size-4" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold">AI Chat</h1>
-              <p className="text-xs text-muted-foreground">Asisten percakapan</p>
-            </div>
+            <h1 className="truncate text-sm font-semibold md:hidden">AI Chat</h1>
             <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
               {!auth.user && (
                 <Button
@@ -128,7 +122,7 @@ export default function App() {
                 id="tema"
                 value={theme}
                 onChange={(event) => setTheme(event.target.value as ThemePreference)}
-                className="h-9 rounded-lg border bg-background px-3 text-xs transition-colors hover:bg-accent/50"
+                className="h-9 rounded-lg border bg-background px-3 text-xs outline-none transition-colors hover:bg-accent/50"
               >
                 <option value="system">Sistem</option>
                 <option value="light">Terang</option>

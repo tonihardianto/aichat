@@ -1,6 +1,7 @@
 import { useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { Check, Copy, RefreshCw, Sparkles } from "lucide-react";
 import type { Message } from "@/types/chat";
 import { Button } from "@/components/ui/button";
@@ -33,8 +34,8 @@ const markdownComponents: Components = {
     const language = className?.replace("language-", "") || "Kode";
 
     return block ? (
-      <div className="my-3 overflow-hidden rounded-lg border bg-slate-950 text-slate-100">
-        <div className="flex items-center justify-between border-b border-white/10 px-3 py-1 text-xs text-slate-300">
+      <div className="my-3 overflow-hidden rounded-xl border bg-[hsl(var(--code-bg))] text-foreground shadow-sm">
+        <div className="flex items-center justify-between border-b bg-muted/60 px-3 py-1 text-xs text-muted-foreground">
           <span>{language}</span>
           <CopyButton value={value} />
         </div>
@@ -59,16 +60,16 @@ export function MessageBubble({ message, streaming, onRegenerate }: Props) {
   return (
     <TooltipProvider delayDuration={300}>
       <MessageRoot align={user ? "end" : "start"} aria-label={user ? "Pesan Anda" : "Jawaban asisten"} className="group">
-    {/* {!user && <MessageAvatar aria-hidden="true" className="self-start"><span className="text-xs font-semibold">AI</span></MessageAvatar>} */}
+    {!user && <div aria-hidden="true" className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary to-violet-500 text-primary-foreground"><Sparkles className="size-3.5" /></div>}
     <MessageContent className={user ? "flex w-fit max-w-[80%]" : "py-1"}>
-      {user ? <Bubble align="end" variant="default"><BubbleContent className="markdown-content break-words">
+      {user ? <Bubble align="end" variant="tinted"><BubbleContent className="markdown-content break-words">
         {message.image && <img src={message.image.dataUrl} alt={`Lampiran ${message.image.name}`} className="mb-2 max-h-72 rounded-md object-contain" />}
-        {message.content && <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{message.content}</ReactMarkdown>}
+        {message.content && <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]} components={markdownComponents}>{message.content}</ReactMarkdown>}
       </BubbleContent></Bubble> : <>
         {message.content ? (
           <Bubble align="start" variant="ghost">
             <BubbleContent className="markdown-content break-words">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]} components={markdownComponents}>
                 {message.content}
               </ReactMarkdown>
               {streaming && (
