@@ -81,7 +81,7 @@ func TestGuestCanStreamOnlyGuestModelWithoutPersistence(t *testing.T) {
 	svc, _, _, _ := setupTestChatService()
 	convID := uuid.NewString()
 	writer := &mockSSEWriter{}
-	err := svc.StreamGuestMessage(context.Background(), convID, "Halo", "guest-model", "guest-model", nil, writer)
+	err := svc.StreamGuestMessage(context.Background(), convID, "Halo", "guest-model", "guest-model", nil, false, writer)
 	if err != nil {
 		t.Fatalf("guest stream failed: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestGuestCanStreamOnlyGuestModelWithoutPersistence(t *testing.T) {
 
 func TestGuestRejectsOtherModels(t *testing.T) {
 	svc, _, _, _ := setupTestChatService()
-	err := svc.StreamGuestMessage(context.Background(), uuid.NewString(), "hi", "other", "guest-model", nil, &mockSSEWriter{})
+	err := svc.StreamGuestMessage(context.Background(), uuid.NewString(), "hi", "other", "guest-model", nil, false, &mockSSEWriter{})
 	if !errors.Is(err, chat.ErrModelNotAllowed) {
 		t.Fatalf("expected model rejection, got %v", err)
 	}

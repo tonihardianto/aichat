@@ -35,7 +35,7 @@ type StreamChunk struct {
 
 type Provider interface {
 	ListModels(ctx context.Context) ([]string, error)
-	Stream(ctx context.Context, model string, messages []ChatMessage, maxTokens int) (<-chan StreamChunk, error)
+	Stream(ctx context.Context, model string, messages []ChatMessage, maxTokens int, think bool) (<-chan StreamChunk, error)
 }
 
 type OpenAIProvider struct {
@@ -112,6 +112,7 @@ type openAIChatRequest struct {
 	Model     string          `json:"model"`
 	Messages  []openAIMessage `json:"messages"`
 	Stream    bool            `json:"stream"`
+	Think     bool            `json:"think"`
 	MaxTokens int             `json:"max_tokens,omitempty"`
 
 	StreamOptions *openAIStreamOptions `json:"stream_options,omitempty"`
@@ -125,6 +126,10 @@ type openAIChatChunk struct {
 	Choices []struct {
 		Delta struct {
 			Content string `json:"content"`
+			// Thinking models stream their reasoning in a separate field. Those
+			// tokens count toward completion_tokens, so they must count for timing.
+			Reasoning        string `json:"reasoning"`
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -134,7 +139,7 @@ type openAIChatChunk struct {
 	} `json:"usage"`
 }
 
-func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []ChatMessage, maxTokens int) (<-chan StreamChunk, error) {
+func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []ChatMessage, maxTokens int, think bool) (<-chan StreamChunk, error) {
 	out := make(chan StreamChunk, 32)
 
 	var reqMessages []openAIMessage
@@ -175,6 +180,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []Ch
 		Model:         model,
 		Messages:      reqMessages,
 		Stream:        true,
+		Think:         think,
 		MaxTokens:     maxTokens,
 		StreamOptions: &openAIStreamOptions{IncludeUsage: true},
 	}
@@ -275,10 +281,13 @@ func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []Ch
 			}
 
 			for _, choice := range chunk.Choices {
+				if firstTokenTime.IsZero() && (choice.Delta.Content != "" || choice.Delta.Reasoning != "" || choice.Delta.ReasoningContent != "") {
+					firstTokenTime = time.Now()
+				}
+				if choice.Delta.Reasoning != "" || choice.Delta.ReasoningContent != "" {
+					deltaCount++ // fallback estimate must include reasoning tokens too
+				}
 				if delta := choice.Delta.Content; delta != "" {
-					if firstTokenTime.IsZero() {
-						firstTokenTime = time.Now()
-					}
 					deltaCount++
 					out <- StreamChunk{Delta: delta}
 				}
@@ -316,7 +325,7 @@ func (f *FakeProvider) ListModels(ctx context.Context) ([]string, error) {
 	return f.Models, nil
 }
 
-func (f *FakeProvider) Stream(ctx context.Context, model string, messages []ChatMessage, maxTokens int) (<-chan StreamChunk, error) {
+func (f *FakeProvider) Stream(ctx context.Context, model string, messages []ChatMessage, maxTokens int, think bool) (<-chan StreamChunk, error) {
 	out := make(chan StreamChunk, 16)
 	go func() {
 		defer close(out)

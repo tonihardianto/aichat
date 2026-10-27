@@ -177,6 +177,7 @@ export async function apiStreamMessage(
   content: string,
   model: string,
   attachmentIds: string[],
+  think: boolean,
   signal: AbortSignal,
   handlers: StreamHandlers
 ): Promise<void> {
@@ -193,6 +194,7 @@ export async function apiStreamMessage(
       content,
       model,
       attachmentIds,
+      think,
     }),
     signal,
   });
@@ -258,13 +260,14 @@ export async function apiStreamGuestMessage(
   content: string,
   model: string,
   history: Array<{ role: Role; content: string }>,
+  think: boolean,
   signal: AbortSignal,
   handlers: StreamHandlers
 ): Promise<void> {
   const response = await fetch(`/api/v1/guest/chat/${conversationId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, model, history }),
+    body: JSON.stringify({ content, model, history, think }),
     signal,
   });
   if (!response.ok) {

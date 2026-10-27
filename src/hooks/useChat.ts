@@ -21,7 +21,7 @@ export type UpdateConversation = (
 ) => void;
 
 export type UseChatResult = {
-  send: (content: string, image?: ImageAttachment) => Promise<void>;
+  send: (content: string, image?: ImageAttachment, think?: boolean) => Promise<void>;
   stop: () => void;
   retry: () => void;
   regenerate: () => void;
@@ -74,7 +74,7 @@ export function useChat(
   );
 
   const send = useCallback(
-    async (content: string, image?: ImageAttachment) => {
+    async (content: string, image?: ImageAttachment, think = false) => {
       if (
         (!content.trim() && !image) ||
         (isGuest && !!image) ||
@@ -191,9 +191,9 @@ export function useChat(
             },
           };
         if (isGuest) {
-          await apiStreamGuestMessage(current.id, content, selectedModel, current.messages.map(({ role, content }) => ({ role, content })), controller.signal, handlers);
+          await apiStreamGuestMessage(current.id, content, selectedModel, current.messages.map(({ role, content }) => ({ role, content })), think, controller.signal, handlers);
         } else {
-          await apiStreamMessage(current.id, content, selectedModel, attachmentIds, controller.signal, handlers);
+          await apiStreamMessage(current.id, content, selectedModel, attachmentIds, think, controller.signal, handlers);
         }
       } catch (err: any) {
         if (controller.signal.aborted) {

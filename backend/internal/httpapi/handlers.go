@@ -309,6 +309,7 @@ func (h *Handlers) HandleDeleteConversation(w http.ResponseWriter, r *http.Reque
 type streamMessageRequest struct {
 	Content       string   `json:"content"`
 	Model         string   `json:"model"`
+	Think         bool     `json:"think"`
 	AttachmentIDs []string `json:"attachmentIds"`
 	History       []struct {
 		Role    string `json:"role"`
@@ -342,6 +343,7 @@ func (h *Handlers) HandleStreamMessage(w http.ResponseWriter, r *http.Request) {
 		ConversationID: convID,
 		Content:        req.Content,
 		Model:          req.Model,
+		Think:          req.Think,
 		AttachmentIDs:  req.AttachmentIDs,
 		IdempotencyKey: idempotencyKey,
 		Writer:         sseWriter,
@@ -426,7 +428,7 @@ func (h *Handlers) HandleGuestChat(w http.ResponseWriter, r *http.Request) {
 		observability.WriteError(w, http.StatusInternalServerError, "streaming_error", "Streaming tidak didukung")
 		return
 	}
-	if err := h.chatService.StreamGuestMessage(r.Context(), r.PathValue("id"), req.Content, req.Model, guestModel, history, sseWriter); err != nil {
+	if err := h.chatService.StreamGuestMessage(r.Context(), r.PathValue("id"), req.Content, req.Model, guestModel, history, req.Think, sseWriter); err != nil {
 		h.logger.Error("guest_chat_stream_failed", "error", err.Error())
 		_ = sseWriter.WriteEvent("message.failed", map[string]any{"error": map[string]string{"code": "generation_failed", "message": "Gagal memproses pesan"}})
 		sseWriter.Flush()

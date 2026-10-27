@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/input-group";
 
 type Props = {
-  onSend: (value: string, image?: ImageAttachment) => Promise<void>;
+  onSend: (value: string, image?: ImageAttachment, think?: boolean) => Promise<void>;
   onStop: () => void;
   isStreaming: boolean;
   centered?: boolean;
@@ -78,6 +78,7 @@ export function Composer({
   const [value, setValue] = React.useState("");
   const [image, setImage] = React.useState<ImageAttachment>();
   const [imageError, setImageError] = React.useState("");
+  const [thinking, setThinking] = React.useState(false);
   const [effort, setEffort] = React.useState(efforts[1].id);
   const [localModel, setLocalModel] = React.useState(
     defaultProviders[0].models[0].id
@@ -115,7 +116,7 @@ export function Composer({
   const send = async () => {
     if (isStreaming || (!value.trim() && !image)) return;
     try {
-      await onSend(value.trim(), image);
+      await onSend(value.trim(), image, thinking);
       imageReadId.current++;
       setValue("");
       setImage(undefined);
@@ -307,6 +308,16 @@ export function Composer({
           >
             <PlusIcon />
           </InputGroupButton>}
+          <InputGroupButton
+            type="button"
+            size="sm"
+            variant={thinking ? "default" : "outline"}
+            aria-pressed={thinking}
+            onClick={() => setThinking((enabled) => !enabled)}
+            disabled={isStreaming}
+          >
+            Thinking {thinking ? "On" : "Off"}
+          </InputGroupButton>
           {!guestMode && <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <InputGroupButton

@@ -56,7 +56,7 @@ type Service struct {
 	cancels  sync.Map // messageID -> context.CancelFunc
 }
 
-func (s *Service) StreamGuestMessage(ctx context.Context, conversationID, content, model, guestModel string, history []provider.ChatMessage, writer SSEWriter) error {
+func (s *Service) StreamGuestMessage(ctx context.Context, conversationID, content, model, guestModel string, history []provider.ChatMessage, think bool, writer SSEWriter) error {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return ErrEmptyMessage
@@ -82,7 +82,7 @@ func (s *Service) StreamGuestMessage(ctx context.Context, conversationID, conten
 		providerMessages = append(providerMessages, message)
 	}
 	providerMessages = append(providerMessages, provider.ChatMessage{Role: "user", Content: content})
-	chunks, err := s.provider.Stream(ctx, model, providerMessages, DefaultMaxTokens)
+	chunks, err := s.provider.Stream(ctx, model, providerMessages, DefaultMaxTokens, think)
 	if err != nil {
 		return fmt.Errorf("start guest stream: %w", err)
 	}
@@ -276,6 +276,7 @@ type StreamMessageParams struct {
 	ConversationID string
 	Content        string
 	Model          string
+	Think          bool
 	AttachmentIDs  []string
 	IdempotencyKey string
 	Writer         SSEWriter
@@ -385,7 +386,7 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 	params.Writer.Flush()
 
 	// Call provider stream
-	chunks, err := s.provider.Stream(streamCtx, params.Model, providerMessages, DefaultMaxTokens)
+	chunks, err := s.provider.Stream(streamCtx, params.Model, providerMessages, DefaultMaxTokens, params.Think)
 	if err != nil {
 		s.logger.Error("provider_stream_init_failed", "error", err.Error(), "message_id", asstMsgID)
 		failTime := time.Now().UTC()
@@ -543,7 +544,7 @@ func (s *Service) Regenerate(ctx context.Context, userID, convID, assistantMsgID
 	})
 	writer.Flush()
 
-	chunks, err := s.provider.Stream(streamCtx, asstMsg.Model, providerMessages, DefaultMaxTokens)
+	chunks, err := s.provider.Stream(streamCtx, asstMsg.Model, providerMessages, DefaultMaxTokens, false)
 	if err != nil {
 		failTime := time.Now().UTC()
 		_ = s.repo.CompleteMessage(ctx, asstMsgID, "", "failed", nil, nil, nil, failTime)
