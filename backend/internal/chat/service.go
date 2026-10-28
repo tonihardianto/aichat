@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,18 +19,23 @@ import (
 	"chat/backend/internal/provider"
 	"chat/backend/internal/repository"
 	"chat/backend/internal/storage"
+	"chat/backend/internal/tooling"
 
 	"github.com/google/uuid"
 )
 
 const (
-	MaxContentLength     = 8000
-	MaxHistoryLength     = 32000
-	MaxAttachmentSize    = 10 * 1024 * 1024 // 10 MiB
-	MaxAttachmentsCount  = 4
-	DefaultMaxTokens     = 4096
+	MaxContentLength    = 8000
+	MaxHistoryLength    = 32000
+	MaxAttachmentSize   = 10 * 1024 * 1024 // 10 MiB
+	MaxAttachmentsCount = 4
+	DefaultMaxTokens    = 4096
+	// ThinkMaxTokens is the budget when thinking is on: reasoning tokens share
+	// max_tokens with the answer, so 4096 can be exhausted before any output.
+	ThinkMaxTokens       = 16384
 	PersistIntervalBytes = 1024
 	PersistIntervalTime  = 500 * time.Millisecond
+	DefaultSystemPrompt  = "You are a helpful, responsive, and direct AI assistant. You converse naturally in the language requested by the user. When responding to creative, casual, or open-ended prompts (such as jokes, casual chat, stories, or brainstorming), choose your direction promptly without overthinking, second-guessing yourself, or evaluating endless candidates. Keep any internal reasoning concise, focused, and proportional to the task."
 )
 
 var (
@@ -74,7 +80,11 @@ func (s *Service) StreamGuestMessage(ctx context.Context, conversationID, conten
 	assistantMsg := &repository.Message{ID: uuid.NewString(), ConversationID: conversationID, Role: "assistant", Content: "", Status: "streaming", Model: model, CreatedAt: time.Now().UTC()}
 	_ = writer.WriteEvent("message.created", map[string]any{"userMessage": userMsg, "message": assistantMsg})
 	writer.Flush()
-	providerMessages := make([]provider.ChatMessage, 0, len(history)+1)
+	providerMessages := make([]provider.ChatMessage, 0, len(history)+2)
+	providerMessages = append(providerMessages, provider.ChatMessage{
+		Role:    "system",
+		Content: DefaultSystemPrompt,
+	})
 	for _, message := range history {
 		if message.Role != "user" && message.Role != "assistant" || len(message.Content) > MaxContentLength {
 			return ErrEmptyMessage
@@ -82,7 +92,7 @@ func (s *Service) StreamGuestMessage(ctx context.Context, conversationID, conten
 		providerMessages = append(providerMessages, message)
 	}
 	providerMessages = append(providerMessages, provider.ChatMessage{Role: "user", Content: content})
-	chunks, err := s.provider.Stream(ctx, model, providerMessages, DefaultMaxTokens, think)
+	chunks, err := s.provider.Stream(ctx, model, providerMessages, maxTokensFor(think), think)
 	if err != nil {
 		return fmt.Errorf("start guest stream: %w", err)
 	}
@@ -90,6 +100,10 @@ func (s *Service) StreamGuestMessage(ctx context.Context, conversationID, conten
 	for chunk := range chunks {
 		if chunk.Error != nil {
 			return fmt.Errorf("guest stream: %w", chunk.Error)
+		}
+		if chunk.Reasoning != "" {
+			_ = writer.WriteEvent("message.reasoning", map[string]any{"messageId": assistantMsg.ID, "delta": chunk.Reasoning})
+			writer.Flush()
 		}
 		if chunk.Delta != "" {
 			answer.WriteString(chunk.Delta)
@@ -132,6 +146,73 @@ func (s *Service) ListModels(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("list models from provider: %w", err)
 	}
 	return provModels, nil
+}
+
+func (s *Service) ListTools(ctx context.Context, userID string) ([]repository.Tool, error) {
+	return s.repo.ListTools(ctx, userID)
+}
+func (s *Service) SaveTool(ctx context.Context, userID, id string, tool repository.Tool) (*repository.Tool, error) {
+	tool.Name, tool.Description, tool.InputSchema, tool.WebhookURL = strings.TrimSpace(tool.Name), strings.TrimSpace(tool.Description), strings.TrimSpace(tool.InputSchema), strings.TrimSpace(tool.WebhookURL)
+	if tool.Name == "" || tool.Description == "" || tool.InputSchema == "" || tool.WebhookURL == "" {
+		return nil, errors.New("semua field tool wajib diisi")
+	}
+	if tooling.IsBuiltin(tool.Name) || !toolNameValid(tool.Name) || !json.Valid([]byte(tool.InputSchema)) {
+		return nil, errors.New("nama atau schema tool tidak valid")
+	}
+	if err := tooling.ValidateWebhookURL(tool.WebhookURL); err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	tool.UpdatedAt = now
+	if id == "" {
+		tool.ID, tool.UserID, tool.CreatedAt = uuid.NewString(), userID, now
+		if err := s.repo.CreateTool(ctx, &tool); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.repo.UpdateTool(ctx, userID, id, &tool); err != nil {
+			return nil, err
+		}
+		tool.ID, tool.UserID = id, userID
+	}
+	return &tool, nil
+}
+func (s *Service) DeleteTool(ctx context.Context, userID, id string) error {
+	return s.repo.DeleteTool(ctx, userID, id)
+}
+func (s *Service) ListSkills(ctx context.Context, userID string) ([]repository.Skill, error) {
+	return s.repo.ListSkills(ctx, userID)
+}
+func (s *Service) SaveSkill(ctx context.Context, userID, id string, skill repository.Skill) (*repository.Skill, error) {
+	skill.Name, skill.Description, skill.Instructions = strings.TrimSpace(skill.Name), strings.TrimSpace(skill.Description), strings.TrimSpace(skill.Instructions)
+	if skill.Name == "" || skill.Description == "" || skill.Instructions == "" {
+		return nil, errors.New("semua field skill wajib diisi")
+	}
+	now := time.Now().UTC()
+	skill.UpdatedAt = now
+	if id == "" {
+		skill.ID, skill.UserID, skill.CreatedAt = uuid.NewString(), userID, now
+		if err := s.repo.CreateSkill(ctx, &skill); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.repo.UpdateSkill(ctx, userID, id, &skill); err != nil {
+			return nil, err
+		}
+		skill.ID, skill.UserID = id, userID
+	}
+	return &skill, nil
+}
+func (s *Service) DeleteSkill(ctx context.Context, userID, id string) error {
+	return s.repo.DeleteSkill(ctx, userID, id)
+}
+func toolNameValid(name string) bool {
+	for i, r := range name {
+		if !(r == '_' || r >= 'a' && r <= 'z' || i > 0 && r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) isModelAllowed(model string) bool {
@@ -368,7 +449,7 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 	}
 
 	// Prepare history for provider
-	providerMessages := s.buildProviderHistory(convDetail.Messages, userMsg, attachments)
+	providerMessages := s.BuildProviderHistory(convDetail.Messages, userMsg, attachments)
 
 	// Setup cancellable context
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -386,7 +467,7 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 	params.Writer.Flush()
 
 	// Call provider stream
-	chunks, err := s.provider.Stream(streamCtx, params.Model, providerMessages, DefaultMaxTokens, params.Think)
+	chunks, err := s.streamWithUserExtensions(streamCtx, userID, params.Model, providerMessages, maxTokensFor(params.Think), params.Think)
 	if err != nil {
 		s.logger.Error("provider_stream_init_failed", "error", err.Error(), "message_id", asstMsgID)
 		failTime := time.Now().UTC()
@@ -429,6 +510,10 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 			return nil
 		}
 
+		if chunk.Reasoning != "" {
+			_ = params.Writer.WriteEvent("message.reasoning", map[string]any{"messageId": asstMsgID, "delta": chunk.Reasoning})
+			params.Writer.Flush()
+		}
 		if chunk.Delta != "" {
 			accumulated.WriteString(chunk.Delta)
 			_ = params.Writer.WriteEvent("message.delta", map[string]any{
@@ -489,6 +574,62 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 	return nil
 }
 
+func (s *Service) streamWithUserExtensions(ctx context.Context, userID, model string, messages []provider.ChatMessage, maxTokens int, think bool) (<-chan provider.StreamChunk, error) {
+	capable, ok := s.provider.(provider.ToolCapable)
+	if !ok {
+		return s.provider.Stream(ctx, model, messages, maxTokens, think)
+	}
+	tools, err := s.repo.ListTools(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	skills, err := s.repo.ListSkills(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	messages[0].Content += "\n\nToday is " + time.Now().UTC().Format("2006-01-02") + " (UTC). You have tools. Your training data is outdated: for news, prices, weather, sports, versions, dates, or any fact that may have changed or that you are unsure about, you MUST call web_search first (then web_fetch to read a result URL if needed) instead of answering from memory. Use get_datetime for the current time, get_weather for weather, and calculate for non-trivial math. Answer using the tool results and cite source URLs."
+	for _, skill := range skills {
+		if skill.Enabled {
+			messages[0].Content += "\n\nSkill " + skill.Name + ": " + skill.Instructions
+		}
+	}
+	memories, err := s.repo.ListMemories(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(memories) > 0 {
+		messages[0].Content += "\n\nThings you remember about this user (use when relevant):"
+		for _, m := range memories {
+			messages[0].Content += "\n- " + m.Content
+		}
+	}
+	messages[0].Content += "\n\nWhen the user shares a lasting personal fact or preference, or asks you to remember something, call remember. To show a web page, widget or UI demo, reply with ONE complete fenced code block tagged html (single file with inline CSS/JS) or jsx (React component named App, no imports needed); the chat shows a live preview with no network access."
+	defs := []provider.FunctionTool{{Name: "remember", Description: "Save one short fact about the user (name, preference, project) for future conversations.", Parameters: json.RawMessage(`{"type":"object","properties":{"fact":{"type":"string"}},"required":["fact"]}`)}}
+	for _, d := range tooling.Defs(s.cfg.TavilyAPIKey != "") {
+		defs = append(defs, provider.FunctionTool{Name: d.Name, Description: d.Description, Parameters: d.Parameters})
+	}
+	webhooks := map[string]string{}
+	for _, tool := range tools {
+		if tool.Enabled {
+			defs = append(defs, provider.FunctionTool{Name: tool.Name, Description: tool.Description, Parameters: json.RawMessage(tool.InputSchema)})
+			webhooks[tool.Name] = tool.WebhookURL
+		}
+	}
+	return capable.StreamWithTools(ctx, model, messages, maxTokens, think, defs, func(ctx context.Context, name string, args json.RawMessage) (string, error) {
+		if name == "remember" {
+			return s.remember(ctx, userID, args)
+		}
+		if out, handled, err := tooling.RunBuiltin(ctx, name, args, s.cfg.TavilyAPIKey); handled {
+			return out, err
+		}
+		url, ok := webhooks[name]
+		if !ok {
+			return "", errors.New("tool tidak ditemukan")
+		}
+		return tooling.Webhook(ctx, url, args)
+	})
+}
+
 func (s *Service) Regenerate(ctx context.Context, userID, convID, assistantMsgID string, writer SSEWriter) error {
 	convDetail, err := s.repo.GetConversation(ctx, userID, convID)
 	if err != nil {
@@ -530,7 +671,7 @@ func (s *Service) Regenerate(ctx context.Context, userID, convID, assistantMsgID
 
 	// Build history up to userMsg
 	history := convDetail.Messages[:targetIndex]
-	providerMessages := s.buildProviderHistory(history, &userMsg, userMsg.Attachments)
+	providerMessages := s.BuildProviderHistory(history, &userMsg, userMsg.Attachments)
 
 	streamCtx, cancel := context.WithCancel(ctx)
 	s.cancels.Store(asstMsgID, cancel)
@@ -544,7 +685,7 @@ func (s *Service) Regenerate(ctx context.Context, userID, convID, assistantMsgID
 	})
 	writer.Flush()
 
-	chunks, err := s.provider.Stream(streamCtx, asstMsg.Model, providerMessages, DefaultMaxTokens, false)
+	chunks, err := s.streamWithUserExtensions(streamCtx, userID, asstMsg.Model, providerMessages, DefaultMaxTokens, false)
 	if err != nil {
 		failTime := time.Now().UTC()
 		_ = s.repo.CompleteMessage(ctx, asstMsgID, "", "failed", nil, nil, nil, failTime)
@@ -584,6 +725,10 @@ func (s *Service) Regenerate(ctx context.Context, userID, convID, assistantMsgID
 			return nil
 		}
 
+		if chunk.Reasoning != "" {
+			_ = writer.WriteEvent("message.reasoning", map[string]any{"messageId": asstMsgID, "delta": chunk.Reasoning})
+			writer.Flush()
+		}
 		if chunk.Delta != "" {
 			accumulated.WriteString(chunk.Delta)
 			_ = writer.WriteEvent("message.delta", map[string]any{
@@ -665,7 +810,7 @@ func (s *Service) CancelMessage(ctx context.Context, userID, convID, messageID s
 	return nil
 }
 
-func (s *Service) buildProviderHistory(history []repository.Message, currentMsg *repository.Message, currentAtts []repository.Attachment) []provider.ChatMessage {
+func (s *Service) BuildProviderHistory(history []repository.Message, currentMsg *repository.Message, currentAtts []repository.Attachment) []provider.ChatMessage {
 	var result []provider.ChatMessage
 	var totalChars int
 
@@ -704,6 +849,12 @@ func (s *Service) buildProviderHistory(history []repository.Message, currentMsg 
 			Images:  images,
 		})
 	}
+
+	// Prepend system prompt to guide reasoning and prevent endless overthinking
+	result = append(result, provider.ChatMessage{
+		Role:    "system",
+		Content: DefaultSystemPrompt,
+	})
 
 	// Reverse back to chronological order
 	for i := len(reversed) - 1; i >= 0; i-- {
@@ -746,4 +897,121 @@ func (s *Service) RunCleanerWorker(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func maxTokensFor(think bool) int {
+	if think {
+		return ThinkMaxTokens
+	}
+	return DefaultMaxTokens
+}
+
+// GenerateTitle asks the model for a short title based on the first exchange
+// of a conversation, stores it, and returns it.
+func (s *Service) GenerateTitle(ctx context.Context, userID, convID, model string) (string, error) {
+	if !s.isModelAllowed(model) {
+		return "", ErrEmptyMessage
+	}
+	detail, err := s.repo.GetConversation(ctx, userID, convID)
+	if err != nil {
+		return "", err
+	}
+	var question, answer string
+	for _, m := range detail.Messages {
+		if m.Role == "user" && question == "" {
+			question = m.Content
+		} else if m.Role == "assistant" && answer == "" && m.Content != "" {
+			answer = m.Content
+		}
+	}
+	if strings.TrimSpace(question) == "" {
+		return "", ErrEmptyMessage
+	}
+	clip := func(v string, n int) string {
+		if r := []rune(v); len(r) > n {
+			return string(r[:n])
+		}
+		return v
+	}
+	prompt := "Buat judul percakapan yang sangat singkat (maksimal 5 kata) dalam bahasa yang sama dengan pesan pengguna. " +
+		"Balas HANYA dengan judulnya, tanpa tanda kutip, tanpa titik, tanpa penjelasan.\n\n" +
+		"Pesan pengguna: " + clip(question, 500)
+	if answer != "" {
+		prompt += "\nJawaban asisten: " + clip(answer, 500)
+	}
+
+	tctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	chunks, err := s.provider.Stream(tctx, model, []provider.ChatMessage{{Role: "user", Content: prompt}}, 64, false)
+	if err != nil {
+		return "", err
+	}
+	var out strings.Builder
+	for chunk := range chunks {
+		if chunk.Error != nil {
+			return "", chunk.Error
+		}
+		out.WriteString(chunk.Delta)
+	}
+	title := CleanTitle(out.String())
+	if title == "" {
+		return "", ErrEmptyMessage
+	}
+	if err := s.repo.UpdateTitle(ctx, userID, convID, title); err != nil {
+		return "", err
+	}
+	return title, nil
+}
+
+// CleanTitle normalizes model output into a single-line, bounded title.
+func CleanTitle(raw string) string {
+	t := strings.TrimSpace(raw)
+	if i := strings.IndexAny(t, "\r\n"); i >= 0 {
+		t = t[:i]
+	}
+	t = strings.TrimSpace(strings.Trim(t, "\"'`*#“”‘’ "))
+	t = strings.TrimRight(t, ".。")
+	if r := []rune(t); len(r) > 60 {
+		t = strings.TrimSpace(string(r[:60]))
+	}
+	return t
+}
+
+const maxMemories = 50
+
+func (s *Service) remember(ctx context.Context, userID string, args json.RawMessage) (string, error) {
+	var in struct {
+		Fact string `json:"fact"`
+	}
+	fact := ""
+	if json.Unmarshal(args, &in) == nil {
+		fact = strings.TrimSpace(in.Fact)
+	}
+	if fact == "" || len([]rune(fact)) > 500 {
+		return "", errors.New("fact wajib diisi, maksimal 500 karakter")
+	}
+	existing, err := s.repo.ListMemories(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if len(existing) >= maxMemories {
+		return "", errors.New("memori penuh, minta pengguna menghapus sebagian")
+	}
+	for _, m := range existing {
+		if strings.EqualFold(m.Content, fact) {
+			return "already remembered", nil
+		}
+	}
+	if err := s.repo.CreateMemory(ctx, &repository.Memory{ID: uuid.NewString(), UserID: userID, Content: fact, CreatedAt: time.Now().UTC()}); err != nil {
+		return "", err
+	}
+	return "saved", nil
+}
+
+func (s *Service) ListMemories(ctx context.Context, userID string) ([]repository.Memory, error) {
+	return s.repo.ListMemories(ctx, userID)
+}
+
+func (s *Service) DeleteMemory(ctx context.Context, userID, id string) error {
+	return s.repo.DeleteMemory(ctx, userID, id)
 }

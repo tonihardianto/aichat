@@ -51,4 +51,17 @@ type Repository interface {
 	// Idempotency
 	GetIdempotencyMessage(ctx context.Context, keyID, userID, conversationID string) (string, error)
 	SetIdempotencyMessage(ctx context.Context, keyID, userID, conversationID, messageID string) error
+
+	// AI extensions
+	ListTools(ctx context.Context, userID string) ([]Tool, error)
+	CreateTool(ctx context.Context, tool *Tool) error
+	UpdateTool(ctx context.Context, userID, id string, tool *Tool) error
+	DeleteTool(ctx context.Context, userID, id string) error
+	ListSkills(ctx context.Context, userID string) ([]Skill, error)
+	CreateSkill(ctx context.Context, skill *Skill) error
+	UpdateSkill(ctx context.Context, userID, id string, skill *Skill) error
+	DeleteSkill(ctx context.Context, userID, id string) error
+	ListMemories(ctx context.Context, userID string) ([]Memory, error)
+	CreateMemory(ctx context.Context, m *Memory) error
+	DeleteMemory(ctx context.Context, userID, id string) error
 }

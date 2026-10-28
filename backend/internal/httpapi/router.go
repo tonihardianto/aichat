@@ -34,12 +34,26 @@ func NewRouter(h *Handlers, authService *auth.AuthService, cfg *config.Config, l
 	mux.Handle("POST /api/v1/attachments", auth.RequireAuth(UserRateLimitMiddleware(userRateLimiter, http.HandlerFunc(h.HandleUploadAttachment))))
 	mux.Handle("GET /api/v1/attachments/{id}/content", auth.RequireAuth(http.HandlerFunc(h.HandleGetAttachmentContent)))
 
+	// AI extensions
+	mux.Handle("GET /api/v1/tools", auth.RequireAuth(http.HandlerFunc(h.HandleListTools)))
+	mux.Handle("POST /api/v1/tools", auth.RequireAuth(http.HandlerFunc(h.HandleCreateTool)))
+	mux.Handle("PATCH /api/v1/tools/{id}", auth.RequireAuth(http.HandlerFunc(h.HandleUpdateTool)))
+	mux.Handle("DELETE /api/v1/tools/{id}", auth.RequireAuth(http.HandlerFunc(h.HandleDeleteTool)))
+	mux.Handle("GET /api/v1/skills", auth.RequireAuth(http.HandlerFunc(h.HandleListSkills)))
+	mux.Handle("POST /api/v1/skills", auth.RequireAuth(http.HandlerFunc(h.HandleCreateSkill)))
+	mux.Handle("PATCH /api/v1/skills/{id}", auth.RequireAuth(http.HandlerFunc(h.HandleUpdateSkill)))
+	mux.Handle("DELETE /api/v1/skills/{id}", auth.RequireAuth(http.HandlerFunc(h.HandleDeleteSkill)))
+	mux.Handle("GET /api/v1/memories", auth.RequireAuth(http.HandlerFunc(h.HandleListMemories)))
+	mux.Handle("DELETE /api/v1/memories/{id}", auth.RequireAuth(http.HandlerFunc(h.HandleDeleteMemory)))
+
 	// Conversations
 	mux.Handle("GET /api/v1/conversations", auth.RequireAuth(http.HandlerFunc(h.HandleListConversations)))
 	mux.Handle("POST /api/v1/conversations", auth.RequireAuth(http.HandlerFunc(h.HandleCreateConversation)))
 	mux.Handle("GET /api/v1/conversations/{id}", auth.RequireAuth(http.HandlerFunc(h.HandleGetConversation)))
 	mux.Handle("PATCH /api/v1/conversations/{id}", auth.RequireAuth(http.HandlerFunc(h.HandleUpdateConversation)))
 	mux.Handle("DELETE /api/v1/conversations/{id}", auth.RequireAuth(http.HandlerFunc(h.HandleDeleteConversation)))
+
+	mux.Handle("POST /api/v1/conversations/{id}/title:generate", auth.RequireAuth(UserRateLimitMiddleware(userRateLimiter, http.HandlerFunc(h.HandleGenerateTitle))))
 
 	// Messages & Streaming
 	mux.Handle("POST /api/v1/conversations/{id}/messages:stream", auth.RequireAuth(UserRateLimitMiddleware(userRateLimiter, http.HandlerFunc(h.HandleStreamMessage))))

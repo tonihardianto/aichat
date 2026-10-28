@@ -14,6 +14,7 @@ import type { Conversation, ImageAttachment, Message } from "@/types/chat";
 const MAX_MESSAGE_LENGTH = 8_000;
 const CONNECTION_ERROR =
   "Gagal menghubungi server. Periksa koneksi lalu coba lagi.";
+const NO_ANSWER_ERROR = "Model tidak menghasilkan jawaban (batas token habis saat berpikir). Coba lagi atau matikan Thinking.";
 
 export type UpdateConversation = (
   id: string,
@@ -155,6 +156,15 @@ export function useChat(
                 }),
               }));
             },
+            onReasoning: (delta, msgId) => {
+              updateConversationRef.current(current.id, (conv) => ({
+                ...conv,
+                messages: conv.messages.map((m) => {
+                  const targetId = currentAssistantIdRef.current || localAssistantId;
+                  return m.id === targetId || m.id === msgId ? { ...m, reasoning: (m.reasoning ?? "") + delta } : m;
+                }),
+              }));
+            },
             onDelta: (delta, msgId) => {
               updateConversationRef.current(current.id, (conv) => ({
                 ...conv,
@@ -168,6 +178,7 @@ export function useChat(
               }));
             },
             onCompleted: (msg: ApiMessage) => {
+              if (!msg.content?.trim()) setError(NO_ANSWER_ERROR);
               updateConversationRef.current(current.id, (conv) => ({
                 ...conv,
                 messages: conv.messages.map((m) => {
@@ -300,6 +311,15 @@ export function useChat(
           currentAssistantIdRef.current = data.message.id;
         }
       },
+      onReasoning: (delta, msgId) => {
+        updateConversationRef.current(current.id, (conv) => ({
+          ...conv,
+          messages: conv.messages.map((m) => {
+            const targetId = currentAssistantIdRef.current || localAssistantId;
+            return m.id === targetId || m.id === msgId ? { ...m, reasoning: (m.reasoning ?? "") + delta } : m;
+          }),
+        }));
+      },
       onDelta: (delta, msgId) => {
         updateConversationRef.current(current.id, (conv) => ({
           ...conv,
@@ -313,6 +333,7 @@ export function useChat(
         }));
       },
       onCompleted: (msg) => {
+        if (!msg.content?.trim()) setError(NO_ANSWER_ERROR);
         updateConversationRef.current(current.id, (conv) => ({
           ...conv,
           messages: conv.messages.map((m) => {

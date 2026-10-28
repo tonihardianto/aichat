@@ -60,3 +60,33 @@ type ConversationDetail struct {
 	Conversation
 	Messages []Message `json:"messages"`
 }
+
+type Tool struct {
+	ID          string    `json:"id"`
+	UserID      string    `json:"-"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	InputSchema string    `json:"inputSchema"`
+	WebhookURL  string    `json:"webhookUrl"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type Skill struct {
+	ID           string    `json:"id"`
+	UserID       string    `json:"-"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	Instructions string    `json:"instructions"`
+	Enabled      bool      `json:"enabled"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+type Memory struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"-"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"createdAt"`
+}

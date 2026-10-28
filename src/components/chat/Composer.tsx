@@ -115,15 +115,19 @@ export function Composer({
 
   const send = async () => {
     if (isStreaming || (!value.trim() && !image)) return;
+    // Clear the input right away so the draft doesn't linger while the AI
+    // is thinking/streaming; restore it if sending fails.
+    const draft = { text: value.trim(), image };
+    imageReadId.current++;
+    setValue("");
+    setImage(undefined);
+    setImageError("");
+    if (inputRef.current) inputRef.current.value = "";
     try {
-      await onSend(value.trim(), image, thinking);
-      imageReadId.current++;
-      setValue("");
-      setImage(undefined);
-      setImageError("");
-      if (inputRef.current) inputRef.current.value = "";
+      await onSend(draft.text, draft.image, thinking);
     } catch {
-      /* Keep draft if send fails */
+      setValue((current) => current || draft.text);
+      setImage((current) => current ?? draft.image);
     }
   };
 

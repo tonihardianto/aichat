@@ -141,3 +141,29 @@ test("assistant message group uses compact readable width", () => {
   const app = source("../src/App.tsx");
   assert.doesNotMatch(app, /min-w-\[360px\]/);
 });
+
+test("assistant HTML and JSX demos render only inside a sandboxed preview", () => {
+  const bubble = source("../src/components/chat/MessageBubble.tsx");
+  const preview = source("../src/components/chat/CodePreview.tsx");
+  assert.match(bubble, /CodePreview/);
+  assert.match(preview, /sandbox="allow-scripts"/);
+  assert.match(preview, /default-src 'none'/);
+  assert.match(preview, /srcDoc/);
+  assert.match(preview, /htmlDocument/);
+  assert.match(preview, /language === "jsx"/);
+});
+
+test("copying highlighted code preserves token text", () => {
+  const bubble = source("../src/components/chat/MessageBubble.tsx");
+  assert.match(bubble, /function nodeText/);
+  assert.match(bubble, /nodeText\(node as ElementContent\)/);
+  assert.doesNotMatch(bubble, /children\.join\(""\)/);
+});
+
+test("syntax highlight selectors survive Tailwind build", () => {
+  const css = source("../src/index.css");
+  const highlight = css.slice(css.indexOf(".hljs"));
+  assert.match(highlight, /\.hljs-keyword/);
+  assert.match(highlight, /\.hljs-string/);
+  assert.ok(css.lastIndexOf(".hljs-keyword") > css.lastIndexOf("@layer base"));
+});

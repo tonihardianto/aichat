@@ -102,3 +102,41 @@ func TestOpenAIStreamTimingIncludesReasoning(t *testing.T) {
 		t.Fatalf("tokens/sec = %v, want ~10 or less", last.TokensPerSec)
 	}
 }
+
+func TestStreamWithToolsExecutesToolThenStreams(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["stream"] == true {
+			fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hasil\"}}]}\n\ndata: [DONE]\n\n")
+			return
+		}
+		calls++
+		if calls == 1 {
+			fmt.Fprint(w, `{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"web_search","arguments":"{\"query\":\"x\"}"}}]}}]}`)
+			return
+		}
+		fmt.Fprint(w, `{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`)
+	}))
+	defer srv.Close()
+
+	executed := ""
+	p := NewOpenAIProvider(srv.URL, "")
+	ch, err := p.StreamWithTools(context.Background(), "m", []ChatMessage{{Role: "user", Content: "hi"}}, 0, false,
+		[]FunctionTool{{Name: "web_search", Parameters: json.RawMessage(`{"type":"object"}`)}},
+		func(_ context.Context, name string, _ json.RawMessage) (string, error) {
+			executed = name
+			return "data", nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got strings.Builder
+	for c := range ch {
+		got.WriteString(c.Delta)
+	}
+	if executed != "web_search" || !strings.Contains(got.String(), "hasil") {
+		t.Fatalf("executed=%q got=%q", executed, got.String())
+	}
+}

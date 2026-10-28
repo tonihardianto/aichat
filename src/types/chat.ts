@@ -11,6 +11,8 @@ export type Message = {
   id: string;
   role: Role;
   content: string;
+  /** Live thinking text; only kept for the current session. */
+  reasoning?: string;
   status?: "complete" | "streaming" | "cancelled" | "failed";
   image?: ImageAttachment;
   outputTokens?: number;

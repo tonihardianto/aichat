@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { LogIn, Menu } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { LogIn, Menu, MessageSquare } from "lucide-react";
 import { useChat } from "@/hooks/useChat";
 import { useConversations } from "@/hooks/useConversations";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,6 +10,10 @@ import { MessageList } from "@/components/chat/MessageList";
 import { Composer } from "@/components/chat/Composer";
 import { ModelSelect } from "@/components/chat/ModelSelect";
 import { AuthModal } from "@/components/auth/AuthModal";
+import { ExtensionsDialog } from "@/components/chat/ExtensionsDialog";
+import { apiGenerateTitle } from "@/lib/api";
+import { titleFromMessages } from "@/lib/title";
+import { UNTITLED_CONVERSATION } from "@/types/chat";
 import { resolveTheme, type ThemePreference } from "@/lib/theme";
 import { useModels } from "@/hooks/useModels";
 
@@ -29,12 +33,41 @@ export default function App() {
   const chat = useChat(conversations.activeConversation, conversations.updateConversation, models.selectedModel, !auth.user);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [extensionsOpen, setExtensionsOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePreference>(initialTheme);
 
   useEffect(() => {
     if (auth.isLoading) return;
     void models.reload();
   }, [auth.user, auth.isLoading, models.reload]);
+
+  // Auto-title: name an untitled conversation after its first user message.
+  const { id: activeId, title: activeTitle, messages: activeMessages } = conversations.activeConversation;
+  const renameConversation = conversations.rename;
+  useEffect(() => {
+    if (activeTitle !== UNTITLED_CONVERSATION) return;
+    const title = titleFromMessages(activeMessages);
+    if (title) void renameConversation(activeId, title);
+  }, [activeId, activeTitle, activeMessages, renameConversation]);
+
+  // Upgrade the quick title to an AI-written one after the first exchange (logged-in users).
+  const titleTried = useRef(new Set<string>());
+  const { isStreaming } = chat;
+  const loggedIn = Boolean(auth.user);
+  const selectedModel = models.selectedModel;
+  useEffect(() => {
+    if (!loggedIn || isStreaming || !selectedModel) return;
+    if (activeMessages.length !== 2 || titleTried.current.has(activeId)) return;
+    const [first, reply] = activeMessages;
+    if (first.role !== "user" || reply.role !== "assistant" || !reply.content.trim()) return;
+    if (activeTitle !== titleFromMessages(activeMessages)) return; // user renamed it manually
+    titleTried.current.add(activeId);
+    apiGenerateTitle(activeId, selectedModel)
+      .then((title) => renameConversation(activeId, title))
+      .catch(() => {
+        /* keep the quick title */
+      });
+  }, [loggedIn, isStreaming, selectedModel, activeId, activeTitle, activeMessages, renameConversation]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -68,6 +101,7 @@ export default function App() {
       void auth.logout();
     },
     onOpenAuth: () => setAuthOpen(true),
+    onOpenExtensions: () => setExtensionsOpen(true),
   };
 
   const empty = conversations.activeConversation.messages.length === 0;
@@ -91,6 +125,9 @@ export default function App() {
                 <Sidebar {...sidebarProps} />
               </SheetContent>
             </Sheet>
+            <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground md:hidden">
+              <MessageSquare className="size-4" />
+            </div>
             <h1 className="truncate text-sm font-semibold md:hidden">AI Chat</h1>
             <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
               {!auth.user && (
@@ -170,6 +207,7 @@ export default function App() {
         onLogin={auth.login}
         onRegister={auth.register}
       />
+      <ExtensionsDialog open={extensionsOpen} onClose={() => setExtensionsOpen(false)} />
     </TooltipProvider>
   );
 }

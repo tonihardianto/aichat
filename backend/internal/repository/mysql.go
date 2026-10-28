@@ -446,3 +446,121 @@ func (r *MySQLRepo) SetIdempotencyMessage(ctx context.Context, keyID, userID, co
 	_, err := r.db.ExecContext(ctx, query, keyID, userID, conversationID, messageID)
 	return err
 }
+
+func (r *MySQLRepo) ListTools(ctx context.Context, userID string) ([]Tool, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, user_id, name, description, input_schema, webhook_url, enabled, created_at, updated_at FROM tools WHERE user_id = ? ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Tool{}
+	for rows.Next() {
+		var v Tool
+		if err := rows.Scan(&v.ID, &v.UserID, &v.Name, &v.Description, &v.InputSchema, &v.WebhookURL, &v.Enabled, &v.CreatedAt, &v.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func (r *MySQLRepo) CreateTool(ctx context.Context, v *Tool) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO tools (id, user_id, name, description, input_schema, webhook_url, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, v.ID, v.UserID, v.Name, v.Description, v.InputSchema, v.WebhookURL, v.Enabled, v.CreatedAt, v.UpdatedAt)
+	return err
+}
+func (r *MySQLRepo) UpdateTool(ctx context.Context, userID, id string, v *Tool) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE tools SET name = ?, description = ?, input_schema = ?, webhook_url = ?, enabled = ?, updated_at = ? WHERE id = ? AND user_id = ?`, v.Name, v.Description, v.InputSchema, v.WebhookURL, v.Enabled, v.UpdatedAt, id, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+func (r *MySQLRepo) DeleteTool(ctx context.Context, userID, id string) error {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM tools WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+func (r *MySQLRepo) ListSkills(ctx context.Context, userID string) ([]Skill, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, user_id, name, description, instructions, enabled, created_at, updated_at FROM skills WHERE user_id = ? ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Skill{}
+	for rows.Next() {
+		var v Skill
+		if err := rows.Scan(&v.ID, &v.UserID, &v.Name, &v.Description, &v.Instructions, &v.Enabled, &v.CreatedAt, &v.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func (r *MySQLRepo) CreateSkill(ctx context.Context, v *Skill) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO skills (id, user_id, name, description, instructions, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, v.ID, v.UserID, v.Name, v.Description, v.Instructions, v.Enabled, v.CreatedAt, v.UpdatedAt)
+	return err
+}
+func (r *MySQLRepo) UpdateSkill(ctx context.Context, userID, id string, v *Skill) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE skills SET name = ?, description = ?, instructions = ?, enabled = ?, updated_at = ? WHERE id = ? AND user_id = ?`, v.Name, v.Description, v.Instructions, v.Enabled, v.UpdatedAt, id, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+func (r *MySQLRepo) DeleteSkill(ctx context.Context, userID, id string) error {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM skills WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *MySQLRepo) ListMemories(ctx context.Context, userID string) ([]Memory, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, user_id, content, created_at FROM memories WHERE user_id = ? ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Memory{}
+	for rows.Next() {
+		var v Memory
+		if err := rows.Scan(&v.ID, &v.UserID, &v.Content, &v.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *MySQLRepo) CreateMemory(ctx context.Context, v *Memory) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO memories (id, user_id, content, created_at) VALUES (?, ?, ?, ?)`, v.ID, v.UserID, v.Content, v.CreatedAt)
+	return err
+}
+
+func (r *MySQLRepo) DeleteMemory(ctx context.Context, userID, id string) error {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM memories WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

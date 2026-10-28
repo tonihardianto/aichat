@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LogOut, MoreHorizontal, Pencil, Plus, Trash2, User as UserIcon, Sparkles } from "lucide-react";
+import { LogOut, MoreHorizontal, Pencil, Plus, Trash2, User as UserIcon, Sparkles, Wrench } from "lucide-react";
 import type { Conversation } from "@/types/chat";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +22,7 @@ type SidebarProps = {
   user?: { email: string } | null;
   onLogout?: () => void;
   onOpenAuth?: () => void;
+  onOpenExtensions?: () => void;
 };
 
 export function Sidebar({
@@ -34,6 +35,7 @@ export function Sidebar({
   user,
   onLogout,
   onOpenAuth,
+  onOpenExtensions,
 }: SidebarProps) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const guestMode = !user;
@@ -145,6 +147,7 @@ export function Sidebar({
             >
               <LogOut className="size-3.5" />
             </Button>
+            <Button type="button" variant="ghost" size="icon" onClick={onOpenExtensions} aria-label="Tools dan skills" className="size-7"><Wrench className="size-3.5" /></Button>
           </div>
         ) : (
           <Button

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +27,7 @@ type ImageData struct {
 
 type StreamChunk struct {
 	Delta        string
+	Reasoning    string // thinking tokens, streamed separately from the answer
 	InputTokens  int
 	OutputTokens int
 	TokensPerSec float64
@@ -36,6 +38,18 @@ type StreamChunk struct {
 type Provider interface {
 	ListModels(ctx context.Context) ([]string, error)
 	Stream(ctx context.Context, model string, messages []ChatMessage, maxTokens int, think bool) (<-chan StreamChunk, error)
+}
+
+type FunctionTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+type ToolExecutor func(context.Context, string, json.RawMessage) (string, error)
+
+type ToolCapable interface {
+	StreamWithTools(ctx context.Context, model string, messages []ChatMessage, maxTokens int, think bool, tools []FunctionTool, execute ToolExecutor) (<-chan StreamChunk, error)
 }
 
 type OpenAIProvider struct {
@@ -104,8 +118,19 @@ type openAIMessageContentPart struct {
 }
 
 type openAIMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"` // string or []openAIMessageContentPart
+	Role       string           `json:"role"`
+	Content    any              `json:"content"` // string or []openAIMessageContentPart
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+}
+
+type openAIToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 type openAIChatRequest struct {
@@ -116,6 +141,14 @@ type openAIChatRequest struct {
 	MaxTokens int             `json:"max_tokens,omitempty"`
 
 	StreamOptions *openAIStreamOptions `json:"stream_options,omitempty"`
+
+	// Ollama's OpenAI-compatible endpoint ignores "think"; it only honors
+	// reasoning_effort ("none" disables thinking).
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	Tools           []struct {
+		Type     string       `json:"type"`
+		Function FunctionTool `json:"function"`
+	} `json:"tools,omitempty"`
 }
 
 type openAIStreamOptions struct {
@@ -139,42 +172,105 @@ type openAIChatChunk struct {
 	} `json:"usage"`
 }
 
-func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []ChatMessage, maxTokens int, think bool) (<-chan StreamChunk, error) {
-	out := make(chan StreamChunk, 32)
+type openAICompletionResponse struct {
+	Choices []struct {
+		Message openAIMessage `json:"message"`
+	} `json:"choices"`
+}
 
-	var reqMessages []openAIMessage
-	for _, m := range messages {
-		if len(m.Images) == 0 {
-			reqMessages = append(reqMessages, openAIMessage{
-				Role:    m.Role,
-				Content: m.Content,
-			})
-		} else {
-			var parts []openAIMessageContentPart
-			if m.Content != "" {
-				parts = append(parts, openAIMessageContentPart{
-					Type: "text",
-					Text: m.Content,
-				})
+func (p *OpenAIProvider) StreamWithTools(ctx context.Context, model string, messages []ChatMessage, maxTokens int, think bool, tools []FunctionTool, execute ToolExecutor) (<-chan StreamChunk, error) {
+	if len(tools) == 0 {
+		return p.Stream(ctx, model, messages, maxTokens, think)
+	}
+	requestMessages := p.requestMessages(messages)
+	for range 4 {
+		toolDefs := make([]struct {
+			Type     string       `json:"type"`
+			Function FunctionTool `json:"function"`
+		}, len(tools))
+		for i, tool := range tools {
+			toolDefs[i] = struct {
+				Type     string       `json:"type"`
+				Function FunctionTool `json:"function"`
+			}{Type: "function", Function: tool}
+		}
+		toolReq := openAIChatRequest{Model: model, Messages: requestMessages, Think: think, MaxTokens: maxTokens, Tools: toolDefs}
+		if !think {
+			toolReq.ReasoningEffort = "none"
+		}
+		reqBody, err := json.Marshal(toolReq)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/chat/completions", p.baseURL), bytes.NewReader(reqBody))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if p.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to call tools: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("tools returned status %d: %s", resp.StatusCode, data)
+		}
+		var parsed openAICompletionResponse
+		err = json.NewDecoder(resp.Body).Decode(&parsed)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if len(parsed.Choices) == 0 {
+			return nil, errors.New("tools returned no choices")
+		}
+		assistant := parsed.Choices[0].Message
+		if len(assistant.ToolCalls) == 0 {
+			break
+		}
+		requestMessages = append(requestMessages, assistant)
+		for _, call := range assistant.ToolCalls {
+			result, err := execute(ctx, call.Function.Name, json.RawMessage(call.Function.Arguments))
+			if err != nil {
+				result = "Tool error: " + err.Error()
 			}
-			for _, img := range m.Images {
-				b64 := base64.StdEncoding.EncodeToString(img.Data)
-				dataURI := fmt.Sprintf("data:%s;base64,%s", img.ContentType, b64)
-				parts = append(parts, openAIMessageContentPart{
-					Type: "image_url",
-					ImageURL: &struct {
-						URL string `json:"url"`
-					}{
-						URL: dataURI,
-					},
-				})
-			}
-			reqMessages = append(reqMessages, openAIMessage{
-				Role:    m.Role,
-				Content: parts,
-			})
+			requestMessages = append(requestMessages, openAIMessage{Role: "tool", ToolCallID: call.ID, Content: result})
 		}
 	}
+	return p.streamOpenAIMessages(ctx, model, requestMessages, maxTokens, think)
+}
+
+func (p *OpenAIProvider) requestMessages(messages []ChatMessage) []openAIMessage {
+	var out []openAIMessage
+	for _, m := range messages {
+		if len(m.Images) == 0 {
+			out = append(out, openAIMessage{Role: m.Role, Content: m.Content})
+			continue
+		}
+		var parts []openAIMessageContentPart
+		if m.Content != "" {
+			parts = append(parts, openAIMessageContentPart{Type: "text", Text: m.Content})
+		}
+		for _, img := range m.Images {
+			parts = append(parts, openAIMessageContentPart{Type: "image_url", ImageURL: &struct {
+				URL string `json:"url"`
+			}{URL: fmt.Sprintf("data:%s;base64,%s", img.ContentType, base64.StdEncoding.EncodeToString(img.Data))}})
+		}
+		out = append(out, openAIMessage{Role: m.Role, Content: parts})
+	}
+	return out
+}
+
+func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []ChatMessage, maxTokens int, think bool) (<-chan StreamChunk, error) {
+	return p.streamOpenAIMessages(ctx, model, p.requestMessages(messages), maxTokens, think)
+}
+
+func (p *OpenAIProvider) streamOpenAIMessages(ctx context.Context, model string, reqMessages []openAIMessage, maxTokens int, think bool) (<-chan StreamChunk, error) {
+	out := make(chan StreamChunk, 32)
 
 	chatReq := openAIChatRequest{
 		Model:         model,
@@ -183,6 +279,10 @@ func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []Ch
 		Think:         think,
 		MaxTokens:     maxTokens,
 		StreamOptions: &openAIStreamOptions{IncludeUsage: true},
+	}
+
+	if !think {
+		chatReq.ReasoningEffort = "none"
 	}
 
 	reqBody, err := json.Marshal(chatReq)
@@ -284,8 +384,9 @@ func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []Ch
 				if firstTokenTime.IsZero() && (choice.Delta.Content != "" || choice.Delta.Reasoning != "" || choice.Delta.ReasoningContent != "") {
 					firstTokenTime = time.Now()
 				}
-				if choice.Delta.Reasoning != "" || choice.Delta.ReasoningContent != "" {
+				if r := choice.Delta.Reasoning + choice.Delta.ReasoningContent; r != "" {
 					deltaCount++ // fallback estimate must include reasoning tokens too
+					out <- StreamChunk{Reasoning: r}
 				}
 				if delta := choice.Delta.Content; delta != "" {
 					deltaCount++

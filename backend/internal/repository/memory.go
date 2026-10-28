@@ -19,6 +19,9 @@ type MemoryRepo struct {
 	messageAttachments  map[string][]string // messageID -> []attachmentID
 	attachments         map[string]*Attachment
 	idempotency         map[string]string // key_id:userID:convID -> messageID
+	tools               map[string]*Tool
+	skills              map[string]*Skill
+	memories            map[string]*Memory
 }
 
 func NewMemoryRepo() *MemoryRepo {
@@ -32,6 +35,9 @@ func NewMemoryRepo() *MemoryRepo {
 		messageAttachments:  make(map[string][]string),
 		attachments:         make(map[string]*Attachment),
 		idempotency:         make(map[string]string),
+		tools:               make(map[string]*Tool),
+		skills:              make(map[string]*Skill),
+		memories:            make(map[string]*Memory),
 	}
 }
 
@@ -417,5 +423,120 @@ func (m *MemoryRepo) SetIdempotencyMessage(ctx context.Context, keyID, userID, c
 
 	k := keyID + ":" + userID + ":" + conversationID
 	m.idempotency[k] = messageID
+	return nil
+}
+
+func (m *MemoryRepo) ListTools(_ context.Context, userID string) ([]Tool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []Tool{}
+	for _, v := range m.tools {
+		if v.UserID == userID {
+			out = append(out, *v)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+func (m *MemoryRepo) CreateTool(_ context.Context, v *Tool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c := *v
+	m.tools[v.ID] = &c
+	return nil
+}
+func (m *MemoryRepo) UpdateTool(_ context.Context, userID, id string, v *Tool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	old, ok := m.tools[id]
+	if !ok || old.UserID != userID {
+		return ErrNotFound
+	}
+	v.ID, v.UserID, v.CreatedAt = old.ID, old.UserID, old.CreatedAt
+	c := *v
+	m.tools[id] = &c
+	return nil
+}
+func (m *MemoryRepo) DeleteTool(_ context.Context, userID, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.tools[id]
+	if !ok || v.UserID != userID {
+		return ErrNotFound
+	}
+	delete(m.tools, id)
+	return nil
+}
+func (m *MemoryRepo) ListSkills(_ context.Context, userID string) ([]Skill, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []Skill{}
+	for _, v := range m.skills {
+		if v.UserID == userID {
+			out = append(out, *v)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+func (m *MemoryRepo) CreateSkill(_ context.Context, v *Skill) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c := *v
+	m.skills[v.ID] = &c
+	return nil
+}
+func (m *MemoryRepo) UpdateSkill(_ context.Context, userID, id string, v *Skill) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	old, ok := m.skills[id]
+	if !ok || old.UserID != userID {
+		return ErrNotFound
+	}
+	v.ID, v.UserID, v.CreatedAt = old.ID, old.UserID, old.CreatedAt
+	c := *v
+	m.skills[id] = &c
+	return nil
+}
+func (m *MemoryRepo) DeleteSkill(_ context.Context, userID, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.skills[id]
+	if !ok || v.UserID != userID {
+		return ErrNotFound
+	}
+	delete(m.skills, id)
+	return nil
+}
+
+func (m *MemoryRepo) ListMemories(_ context.Context, userID string) ([]Memory, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []Memory{}
+	for _, v := range m.memories {
+		if v.UserID == userID {
+			out = append(out, *v)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (m *MemoryRepo) CreateMemory(_ context.Context, v *Memory) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c := *v
+	m.memories[v.ID] = &c
+	return nil
+}
+
+func (m *MemoryRepo) DeleteMemory(_ context.Context, userID, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.memories[id]
+	if !ok || v.UserID != userID {
+		return ErrNotFound
+	}
+	delete(m.memories, id)
 	return nil
 }

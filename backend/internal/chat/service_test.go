@@ -251,3 +251,57 @@ func TestStreamProviderModel(t *testing.T) {
 		t.Fatalf("expected provider model to be accepted: %v", err)
 	}
 }
+
+func TestCleanTitle(t *testing.T) {
+	cases := map[string]string{
+		"\"Resep Nasi Goreng\"\n":        "Resep Nasi Goreng",
+		"  **Belajar Go.**  ":            "Belajar Go",
+		"Judul satu\nPenjelasan panjang": "Judul satu",
+		"":                               "",
+	}
+	for in, want := range cases {
+		if got := chat.CleanTitle(in); got != want {
+			t.Errorf("CleanTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestBuildProviderHistoryIncludesSystemPrompt(t *testing.T) {
+	svc, _, _, _ := setupTestChatService()
+	userMsg := repository.Message{
+		ID:      "msg-1",
+		Role:    "user",
+		Content: "Halo",
+	}
+
+	msgs := svc.BuildProviderHistory(nil, &userMsg, nil)
+	if len(msgs) < 2 {
+		t.Fatalf("expected at least 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Role != "system" {
+		t.Fatalf("expected first message to have role system, got %s", msgs[0].Role)
+	}
+	if msgs[0].Content == "" {
+		t.Fatal("expected system prompt to be non-empty")
+	}
+	if msgs[1].Role != "user" || msgs[1].Content != "Halo" {
+		t.Fatalf("expected second message to be user message, got %+v", msgs[1])
+	}
+}
+
+func TestMemoriesCRUDViaService(t *testing.T) {
+	svc, repo, _, _ := setupTestChatService()
+	ctx := context.Background()
+	if err := repo.CreateMemory(ctx, &repository.Memory{ID: "m1", UserID: "u1", Content: "nama: Toni"}); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := svc.ListMemories(ctx, "u2"); len(list) != 0 {
+		t.Fatalf("leak across users: %v", list)
+	}
+	if err := svc.DeleteMemory(ctx, "u2", "m1"); err == nil {
+		t.Fatal("deleted another user's memory")
+	}
+	if err := svc.DeleteMemory(ctx, "u1", "m1"); err != nil {
+		t.Fatal(err)
+	}
+}

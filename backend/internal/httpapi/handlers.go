@@ -115,6 +115,119 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	observability.WriteJSON(w, http.StatusOK, models)
 }
 
+type extensionRequest struct {
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	InputSchema  string `json:"inputSchema"`
+	WebhookURL   string `json:"webhookUrl"`
+	Instructions string `json:"instructions"`
+	Enabled      bool   `json:"enabled"`
+}
+
+func extensionUser(w http.ResponseWriter, r *http.Request) *repository.User {
+	u := auth.GetUser(r.Context())
+	if u == nil {
+		observability.WriteError(w, http.StatusUnauthorized, "unauthorized", "Autentikasi diperlukan")
+	}
+	return u
+}
+func (h *Handlers) HandleListTools(w http.ResponseWriter, r *http.Request) {
+	u := extensionUser(w, r)
+	if u == nil {
+		return
+	}
+	v, e := h.chatService.ListTools(r.Context(), u.ID)
+	if e != nil {
+		observability.WriteError(w, 500, "internal_error", "Gagal memuat tools")
+		return
+	}
+	observability.WriteJSON(w, 200, v)
+}
+func (h *Handlers) saveTool(w http.ResponseWriter, r *http.Request, id string) {
+	u := extensionUser(w, r)
+	if u == nil {
+		return
+	}
+	var q extensionRequest
+	if json.NewDecoder(r.Body).Decode(&q) != nil {
+		observability.WriteError(w, 400, "invalid_request", "Format request tidak valid")
+		return
+	}
+	v, e := h.chatService.SaveTool(r.Context(), u.ID, id, repository.Tool{Name: q.Name, Description: q.Description, InputSchema: q.InputSchema, WebhookURL: q.WebhookURL, Enabled: q.Enabled})
+	if e != nil {
+		observability.WriteError(w, 400, "invalid_tool", e.Error())
+		return
+	}
+	status := http.StatusOK
+	if id == "" {
+		status = http.StatusCreated
+	}
+	observability.WriteJSON(w, status, v)
+}
+func (h *Handlers) HandleCreateTool(w http.ResponseWriter, r *http.Request) { h.saveTool(w, r, "") }
+func (h *Handlers) HandleUpdateTool(w http.ResponseWriter, r *http.Request) {
+	h.saveTool(w, r, r.PathValue("id"))
+}
+func (h *Handlers) HandleDeleteTool(w http.ResponseWriter, r *http.Request) {
+	u := extensionUser(w, r)
+	if u == nil {
+		return
+	}
+	if e := h.chatService.DeleteTool(r.Context(), u.ID, r.PathValue("id")); e != nil {
+		observability.WriteError(w, 404, "not_found", "Tool tidak ditemukan")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+func (h *Handlers) HandleListSkills(w http.ResponseWriter, r *http.Request) {
+	u := extensionUser(w, r)
+	if u == nil {
+		return
+	}
+	v, e := h.chatService.ListSkills(r.Context(), u.ID)
+	if e != nil {
+		observability.WriteError(w, 500, "internal_error", "Gagal memuat skills")
+		return
+	}
+	observability.WriteJSON(w, 200, v)
+}
+func (h *Handlers) saveSkill(w http.ResponseWriter, r *http.Request, id string) {
+	u := extensionUser(w, r)
+	if u == nil {
+		return
+	}
+	var q extensionRequest
+	if json.NewDecoder(r.Body).Decode(&q) != nil {
+		observability.WriteError(w, 400, "invalid_request", "Format request tidak valid")
+		return
+	}
+	v, e := h.chatService.SaveSkill(r.Context(), u.ID, id, repository.Skill{Name: q.Name, Description: q.Description, Instructions: q.Instructions, Enabled: q.Enabled})
+	if e != nil {
+		observability.WriteError(w, 400, "invalid_skill", e.Error())
+		return
+	}
+	status := http.StatusOK
+	if id == "" {
+		status = http.StatusCreated
+	}
+	observability.WriteJSON(w, status, v)
+}
+func (h *Handlers) HandleCreateSkill(w http.ResponseWriter, r *http.Request) { h.saveSkill(w, r, "") }
+func (h *Handlers) HandleUpdateSkill(w http.ResponseWriter, r *http.Request) {
+	h.saveSkill(w, r, r.PathValue("id"))
+}
+func (h *Handlers) HandleDeleteSkill(w http.ResponseWriter, r *http.Request) {
+	u := extensionUser(w, r)
+	if u == nil {
+		return
+	}
+	if e := h.chatService.DeleteSkill(r.Context(), u.ID, r.PathValue("id")); e != nil {
+		observability.WriteError(w, 404, "not_found", "Skill tidak ditemukan")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // Attachments
 func (h *Handlers) HandleUploadAttachment(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r.Context())
@@ -516,4 +629,56 @@ func (h *Handlers) HandleReadyz(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	observability.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+}
+
+type generateTitleRequest struct {
+	Model string `json:"model"`
+}
+
+func (h *Handlers) HandleGenerateTitle(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		observability.WriteError(w, http.StatusUnauthorized, "unauthorized", "Autentikasi diperlukan")
+		return
+	}
+	var req generateTitleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		observability.WriteError(w, http.StatusBadRequest, "invalid_request", "Format request tidak valid")
+		return
+	}
+	title, err := h.chatService.GenerateTitle(r.Context(), user.ID, r.PathValue("id"), req.Model)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			observability.WriteError(w, http.StatusNotFound, "not_found", "Percakapan tidak ditemukan")
+			return
+		}
+		observability.WriteError(w, http.StatusBadGateway, "title_failed", "Gagal membuat judul")
+		return
+	}
+	observability.WriteJSON(w, http.StatusOK, map[string]string{"title": title})
+}
+
+func (h *Handlers) HandleListMemories(w http.ResponseWriter, r *http.Request) {
+	u := extensionUser(w, r)
+	if u == nil {
+		return
+	}
+	v, e := h.chatService.ListMemories(r.Context(), u.ID)
+	if e != nil {
+		observability.WriteError(w, http.StatusInternalServerError, "internal_error", "Gagal memuat memori")
+		return
+	}
+	observability.WriteJSON(w, http.StatusOK, v)
+}
+
+func (h *Handlers) HandleDeleteMemory(w http.ResponseWriter, r *http.Request) {
+	u := extensionUser(w, r)
+	if u == nil {
+		return
+	}
+	if e := h.chatService.DeleteMemory(r.Context(), u.ID, r.PathValue("id")); e != nil {
+		observability.WriteError(w, http.StatusNotFound, "not_found", "Memori tidak ditemukan")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

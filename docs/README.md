@@ -93,3 +93,17 @@ data: [DONE]
 ## Data lokal
 
 Percakapan disimpan di `localStorage` browser dengan key `ai-chat-conversations-v1`. Tidak ada database atau sinkronisasi server; menghapus data situs akan menghapus riwayat.
+
+## Tools dan skills
+
+Pengguna login membuka **Tools & Skills** dari ikon kunci inggris pada sidebar.
+
+- `web_search` bawaan memakai Tavily. Tambahkan `TAVILY_API_KEY` pada `backend/.env`.
+- `web_fetch` bawaan mengambil halaman publik dan mengembalikan teks bersih (maks ~8000 karakter).
+- `get_datetime`, `get_weather` (Open-Meteo), dan `calculate` bawaan, tanpa API key. `web_search` mendukung `topic=news` dan `days`.
+- Tool kustom adalah webhook `https://` dengan nama snake_case dan JSON Schema input. Backend memblokir localhost, IP private, dan redirect.
+- `remember` bawaan menyimpan fakta pendek tentang pengguna (maks 50, 500 karakter) di MySQL. Fakta masuk ke system prompt percakapan berikutnya. Daftar dan hapus di dialog **Tools & Skills**.
+- Blok kode AI bertag `html` atau `jsx` punya tombol **Preview**. Preview berjalan hanya di iframe sandbox browser, tanpa network, akses parent, form, popup, atau navigasi luar. Tidak ada eksekusi kode di server.
+- Skill adalah instruksi per akun yang disisipkan ke system prompt saat aktif.
+
+Provider model harus mendukung OpenAI-compatible function calling agar tools dapat dipanggil. Skill tetap bekerja pada provider biasa.

@@ -45,6 +45,10 @@ export type ApiConversationDetail = ApiConversation & {
   messages: ApiMessage[];
 };
 
+export type ApiTool = { id: string; name: string; description: string; inputSchema: string; webhookUrl: string; enabled: boolean; createdAt: string; updatedAt: string };
+export type ApiMemory = { id: string; content: string; createdAt: string };
+export type ApiSkill = { id: string; name: string; description: string; instructions: string; enabled: boolean; createdAt: string; updatedAt: string };
+
 export class ApiError extends Error {
   code: string;
   status: number;
@@ -159,15 +163,35 @@ export async function apiRenameConversation(id: string, title: string): Promise<
   });
 }
 
+export async function apiGenerateTitle(id: string, model: string): Promise<string> {
+  const res = await request<{ title: string }>(`/api/v1/conversations/${id}/title:generate`, {
+    method: "POST",
+    body: JSON.stringify({ model }),
+  });
+  return res.title;
+}
+
 export async function apiDeleteConversation(id: string): Promise<void> {
   await request<{ message: string }>(`/api/v1/conversations/${id}`, {
     method: "DELETE",
   });
 }
 
+export async function apiListTools(): Promise<ApiTool[]> { return request<ApiTool[]>("/api/v1/tools"); }
+export async function apiSaveTool(tool: Omit<ApiTool, "id" | "createdAt" | "updatedAt"> & { id?: string }): Promise<ApiTool> {
+  return request<ApiTool>(tool.id ? `/api/v1/tools/${tool.id}` : "/api/v1/tools", { method: tool.id ? "PATCH" : "POST", body: JSON.stringify(tool) });
+}
+export async function apiDeleteTool(id: string): Promise<void> { await request<void>(`/api/v1/tools/${id}`, { method: "DELETE" }); }
+export async function apiListSkills(): Promise<ApiSkill[]> { return request<ApiSkill[]>("/api/v1/skills"); }
+export async function apiSaveSkill(skill: Omit<ApiSkill, "id" | "createdAt" | "updatedAt"> & { id?: string }): Promise<ApiSkill> {
+  return request<ApiSkill>(skill.id ? `/api/v1/skills/${skill.id}` : "/api/v1/skills", { method: skill.id ? "PATCH" : "POST", body: JSON.stringify(skill) });
+}
+export async function apiDeleteSkill(id: string): Promise<void> { await request<void>(`/api/v1/skills/${id}`, { method: "DELETE" }); }
+
 export type StreamHandlers = {
   onCreated?: (data: { userMessage?: ApiMessage; message: ApiMessage }) => void;
   onDelta?: (delta: string, messageId: string) => void;
+  onReasoning?: (delta: string, messageId: string) => void;
   onCompleted?: (message: ApiMessage) => void;
   onError?: (err: Error) => void;
 };
@@ -240,6 +264,8 @@ export async function apiStreamMessage(
         const parsed = JSON.parse(rawData);
         if (event === "message.created") {
           handlers.onCreated?.(parsed);
+        } else if (event === "message.reasoning") {
+          handlers.onReasoning?.(parsed.delta, parsed.messageId);
         } else if (event === "message.delta") {
           handlers.onDelta?.(parsed.delta, parsed.messageId);
         } else if (event === "message.completed") {
@@ -290,6 +316,7 @@ export async function apiStreamGuestMessage(
       if (!rawData) continue;
       const parsed = JSON.parse(rawData);
       if (event === "message.created") handlers.onCreated?.(parsed);
+      else if (event === "message.reasoning") handlers.onReasoning?.(parsed.delta, parsed.messageId);
       else if (event === "message.delta") handlers.onDelta?.(parsed.delta, parsed.messageId);
       else if (event === "message.completed") handlers.onCompleted?.(parsed.message);
       else if (event === "message.failed") handlers.onError?.(new Error(parsed?.error?.message || "Terjadi kesalahan stream"));
@@ -351,6 +378,8 @@ export async function apiRegenerateMessage(
         const parsed = JSON.parse(rawData);
         if (event === "message.created") {
           handlers.onCreated?.(parsed);
+        } else if (event === "message.reasoning") {
+          handlers.onReasoning?.(parsed.delta, parsed.messageId);
         } else if (event === "message.delta") {
           handlers.onDelta?.(parsed.delta, parsed.messageId);
         } else if (event === "message.completed") {
@@ -373,3 +402,6 @@ export async function apiCancelMessage(conversationId: string, messageId: string
     credentials: "same-origin",
   });
 }
+
+export async function apiListMemories(): Promise<ApiMemory[]> { return request<ApiMemory[]>("/api/v1/memories"); }
+export async function apiDeleteMemory(id: string): Promise<void> { await request<void>(`/api/v1/memories/${id}`, { method: "DELETE" }); }
