@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"chat/backend/internal/auth"
 	"chat/backend/internal/chat"
@@ -621,7 +622,7 @@ func (h *Handlers) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) HandleReadyz(w http.ResponseWriter, r *http.Request) {
 	// Check MySQL connection if DB is initialized
 	if h.db != nil {
-		ctx, cancel := context.WithTimeout(r.Context(), 500)
+		ctx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
 		defer cancel()
 		if err := h.db.PingContext(ctx); err != nil {
 			observability.WriteError(w, http.StatusServiceUnavailable, "db_unavailable", "Koneksi database bermasalah")
