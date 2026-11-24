@@ -26,7 +26,7 @@ const (
 // ImageDef is the schema offered to the LLM for the generate_image tool.
 var ImageDef = Def{
 	Name:        "generate_image",
-	Description: "Generate an image from a text description using the user's local ComfyUI (Qwen-Image). Write the prompt in English, detailed and descriptive (subject, setting, lighting, style). Takes up to a minute. The result is a markdown image line: copy it verbatim into your reply so the user can see the image.",
+	Description: "Generate an image from a text description using the user's local ComfyUI (Qwen-Image). Write the prompt in English, detailed and descriptive (subject, setting, lighting, style). Takes up to a minute. The image is shown to the user automatically; do not write any image link or markdown, just add a short comment.",
 	Parameters:  json.RawMessage(`{"type":"object","properties":{"prompt":{"type":"string","description":"Detailed English description of the image."},"negative_prompt":{"type":"string","description":"Things to avoid. Optional."},"width":{"type":"integer","minimum":512,"maximum":1536,"description":"Default 1024."},"height":{"type":"integer","minimum":512,"maximum":1536,"description":"Default 1024."},"seed":{"type":"integer","description":"Optional, for reproducible results."}},"required":["prompt"]}`),
 }
 
@@ -269,6 +269,6 @@ func ComfyReferenceWorkflow(a imageArgs, seed int64) map[string]any {
 // EditImageDef is offered only when the conversation contains an image the user attached.
 var EditImageDef = Def{
 	Name:        "edit_image",
-	Description: "Generate a new image using the image the user attached most recently as a reference (e.g. keep the same subject, face, outfit or scene, but follow the new instructions). The output keeps the reference's aspect ratio. Write the prompt in English and say what to keep and what to change. The result is a markdown image line: copy it verbatim into your reply.",
+	Description: "Generate a new image using the image the user attached most recently as a reference (e.g. keep the same subject, face, outfit or scene, but follow the new instructions). The output keeps the reference's aspect ratio. Write the prompt in English and say what to keep and what to change. The image is shown to the user automatically; do not write any image link or markdown.",
 	Parameters:  json.RawMessage(`{"type":"object","properties":{"prompt":{"type":"string","description":"English description of the desired result, referring to the reference image."},"negative_prompt":{"type":"string","description":"Optional."},"seed":{"type":"integer","description":"Optional."}},"required":["prompt"]}`),
 }

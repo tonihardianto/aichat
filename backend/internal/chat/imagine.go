@@ -48,7 +48,41 @@ func (s *Service) startChunks(ctx context.Context, userID, model, content string
 	if cmd, ok := parseImagine(content); ok && s.cfg.ComfyUIURL != "" {
 		return s.imagineStream(ctx, userID, cmd, attachments), nil
 	}
-	return s.streamWithUserExtensions(ctx, userID, model, messages, maxTokens, think)
+	pending := make(chan string, 8)
+	chunks, err := s.streamWithUserExtensions(ctx, userID, model, messages, maxTokens, think, func(md string) {
+		select {
+		case pending <- md:
+		default:
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Images produced by tools are injected into the stream here, ahead of the next LLM chunk.
+	out := make(chan provider.StreamChunk)
+	go func() {
+		defer close(out)
+		for c := range chunks {
+			for drained := false; !drained; {
+				select {
+				case md := <-pending:
+					select {
+					case out <- provider.StreamChunk{Delta: md + "\n\n"}:
+					case <-ctx.Done():
+						return
+					}
+				default:
+					drained = true
+				}
+			}
+			select {
+			case out <- c:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
 }
 
 func (s *Service) imagineStream(ctx context.Context, userID string, cmd imagineCmd, attachments []repository.Attachment) <-chan provider.StreamChunk {

@@ -575,7 +575,7 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 	return nil
 }
 
-func (s *Service) streamWithUserExtensions(ctx context.Context, userID, model string, messages []provider.ChatMessage, maxTokens int, think bool) (<-chan provider.StreamChunk, error) {
+func (s *Service) streamWithUserExtensions(ctx context.Context, userID, model string, messages []provider.ChatMessage, maxTokens int, think bool, showImage func(markdown string)) (<-chan provider.StreamChunk, error) {
 	capable, ok := s.provider.(provider.ToolCapable)
 	if !ok {
 		return s.provider.Stream(ctx, model, messages, maxTokens, think)
@@ -633,10 +633,10 @@ func (s *Service) streamWithUserExtensions(ctx context.Context, userID, model st
 			return s.remember(ctx, userID, args)
 		}
 		if name == "generate_image" && s.cfg.ComfyUIURL != "" {
-			return s.saveGeneratedImage(ctx, userID)(tooling.GenerateImage(ctx, s.cfg.ComfyUIURL, args))
+			return s.saveGeneratedImage(ctx, userID, showImage)(tooling.GenerateImage(ctx, s.cfg.ComfyUIURL, args))
 		}
 		if name == "edit_image" && s.cfg.ComfyUIURL != "" && refImage != nil {
-			return s.saveGeneratedImage(ctx, userID)(tooling.EditImage(ctx, s.cfg.ComfyUIURL, args, refImage))
+			return s.saveGeneratedImage(ctx, userID, showImage)(tooling.EditImage(ctx, s.cfg.ComfyUIURL, args, refImage))
 		}
 		if out, handled, err := tooling.RunBuiltin(ctx, name, args, s.cfg.TavilyAPIKey); handled {
 			return out, err
@@ -1037,8 +1037,9 @@ func (s *Service) DeleteMemory(ctx context.Context, userID, id string) error {
 
 var generatedImageName = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$`)
 
-// saveGeneratedImage stores a ComfyUI result for the user and builds the tool reply the LLM should echo.
-func (s *Service) saveGeneratedImage(ctx context.Context, userID string) func([]byte, error) (string, error) {
+// saveGeneratedImage stores a ComfyUI result for the user and shows it in the chat itself.
+// The model never copies the image URL (small models garble UUIDs), it only gets a short confirmation.
+func (s *Service) saveGeneratedImage(ctx context.Context, userID string, showImage func(markdown string)) func([]byte, error) (string, error) {
 	return func(data []byte, err error) (string, error) {
 		if err != nil {
 			return "", err
@@ -1047,7 +1048,10 @@ func (s *Service) saveGeneratedImage(ctx context.Context, userID string) func([]
 		if err != nil {
 			return "", fmt.Errorf("gagal menyimpan gambar: %w", err)
 		}
-		return "Image generated. Include this exact markdown line in your reply so the user sees it: ![generated image](/api/v1/generated/" + name + ")", nil
+		if showImage != nil {
+			showImage("![generated image](/api/v1/generated/" + name + ")")
+		}
+		return "Image generated and already shown to the user. Do NOT write any image markdown or URL; just reply with one short sentence about it.", nil
 	}
 }
 
