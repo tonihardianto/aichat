@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -467,7 +468,7 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 	params.Writer.Flush()
 
 	// Call provider stream
-	chunks, err := s.streamWithUserExtensions(streamCtx, userID, params.Model, providerMessages, maxTokensFor(params.Think), params.Think)
+	chunks, err := s.startChunks(streamCtx, userID, params.Model, content, providerMessages, attachments, maxTokensFor(params.Think), params.Think)
 	if err != nil {
 		s.logger.Error("provider_stream_init_failed", "error", err.Error(), "message_id", asstMsgID)
 		failTime := time.Now().UTC()
@@ -608,6 +609,18 @@ func (s *Service) streamWithUserExtensions(ctx context.Context, userID, model st
 	for _, d := range tooling.Defs(s.cfg.TavilyAPIKey != "") {
 		defs = append(defs, provider.FunctionTool{Name: d.Name, Description: d.Description, Parameters: d.Parameters})
 	}
+	var refImage []byte
+	for i := len(messages) - 1; i >= 0 && refImage == nil; i-- {
+		if n := len(messages[i].Images); n > 0 {
+			refImage = messages[i].Images[n-1].Data
+		}
+	}
+	if s.cfg.ComfyUIURL != "" {
+		defs = append(defs, provider.FunctionTool{Name: tooling.ImageDef.Name, Description: tooling.ImageDef.Description, Parameters: tooling.ImageDef.Parameters})
+		if refImage != nil {
+			defs = append(defs, provider.FunctionTool{Name: tooling.EditImageDef.Name, Description: tooling.EditImageDef.Description, Parameters: tooling.EditImageDef.Parameters})
+		}
+	}
 	webhooks := map[string]string{}
 	for _, tool := range tools {
 		if tool.Enabled {
@@ -618,6 +631,12 @@ func (s *Service) streamWithUserExtensions(ctx context.Context, userID, model st
 	return capable.StreamWithTools(ctx, model, messages, maxTokens, think, defs, func(ctx context.Context, name string, args json.RawMessage) (string, error) {
 		if name == "remember" {
 			return s.remember(ctx, userID, args)
+		}
+		if name == "generate_image" && s.cfg.ComfyUIURL != "" {
+			return s.saveGeneratedImage(ctx, userID)(tooling.GenerateImage(ctx, s.cfg.ComfyUIURL, args))
+		}
+		if name == "edit_image" && s.cfg.ComfyUIURL != "" && refImage != nil {
+			return s.saveGeneratedImage(ctx, userID)(tooling.EditImage(ctx, s.cfg.ComfyUIURL, args, refImage))
 		}
 		if out, handled, err := tooling.RunBuiltin(ctx, name, args, s.cfg.TavilyAPIKey); handled {
 			return out, err
@@ -685,7 +704,7 @@ func (s *Service) Regenerate(ctx context.Context, userID, convID, assistantMsgID
 	})
 	writer.Flush()
 
-	chunks, err := s.streamWithUserExtensions(streamCtx, userID, asstMsg.Model, providerMessages, DefaultMaxTokens, false)
+	chunks, err := s.startChunks(streamCtx, userID, asstMsg.Model, userMsg.Content, providerMessages, userMsg.Attachments, DefaultMaxTokens, false)
 	if err != nil {
 		failTime := time.Now().UTC()
 		_ = s.repo.CompleteMessage(ctx, asstMsgID, "", "failed", nil, nil, nil, failTime)
@@ -1014,4 +1033,32 @@ func (s *Service) ListMemories(ctx context.Context, userID string) ([]repository
 
 func (s *Service) DeleteMemory(ctx context.Context, userID, id string) error {
 	return s.repo.DeleteMemory(ctx, userID, id)
+}
+
+var generatedImageName = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$`)
+
+// saveGeneratedImage stores a ComfyUI result for the user and builds the tool reply the LLM should echo.
+func (s *Service) saveGeneratedImage(ctx context.Context, userID string) func([]byte, error) (string, error) {
+	return func(data []byte, err error) (string, error) {
+		if err != nil {
+			return "", err
+		}
+		name, err := s.storeGeneratedImage(ctx, userID, data)
+		if err != nil {
+			return "", fmt.Errorf("gagal menyimpan gambar: %w", err)
+		}
+		return "Image generated. Include this exact markdown line in your reply so the user sees it: ![generated image](/api/v1/generated/" + name + ")", nil
+	}
+}
+
+// GetGeneratedImage serves an image produced by generate_image, scoped to its owner.
+func (s *Service) GetGeneratedImage(ctx context.Context, userID, name string) (io.ReadCloser, string, error) {
+	if !generatedImageName.MatchString(name) {
+		return nil, "", repository.ErrNotFound
+	}
+	rc, ct, err := s.store.Download(ctx, "users/"+userID+"/generated/"+name)
+	if err != nil {
+		return nil, "", repository.ErrNotFound
+	}
+	return rc, ct, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -205,5 +206,16 @@ func TestAuthEndpoints(t *testing.T) {
 	router.ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 Unauthorized after logout, got %d", rr.Code)
+	}
+}
+
+func TestGuestChatRejectsImagineCommand(t *testing.T) {
+	router, _, _ := setupTestServer()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/guest/chat/"+uuid.NewString(), bytes.NewBufferString(`{"content":"/imagine kucing","model":"guest-model"}`))
+	req.Header.Set("Origin", "http://localhost:5173")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden || !strings.Contains(rr.Body.String(), "login_required") {
+		t.Fatalf("expected 403 login_required, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

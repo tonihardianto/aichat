@@ -290,7 +290,7 @@ export function Composer({
           maxLength={8000}
           rows={1}
           aria-label="Tulis pesan"
-          placeholder="Ketik pesan..."
+          placeholder={guestMode ? "Ketik pesan..." : "Ketik pesan... (/imagine untuk membuat gambar)"}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {

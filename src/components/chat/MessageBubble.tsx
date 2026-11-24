@@ -101,6 +101,7 @@ const markdownComponents: Components = {
       </code>
     );
   },
+  img: ({ node: _node, alt, ...props }) => <img {...props} alt={alt ?? ""} loading="lazy" className="my-2 max-h-[32rem] max-w-full rounded-xl border object-contain" />,
   a: ({ ...props }) => <a {...props} className="text-primary underline underline-offset-4" />,
   table: ({ ...props }) => <div className="overflow-x-auto"><table {...props} /></div>,
 };

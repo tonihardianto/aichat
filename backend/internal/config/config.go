@@ -16,6 +16,7 @@ type Config struct {
 	LLMAPIKey      string
 	LLMGuestModel  string
 	TavilyAPIKey   string
+	ComfyUIURL     string
 	CookieSecure   bool
 	SessionSecret  string
 	AllowedOrigins []string
@@ -81,6 +82,7 @@ func Load() (*Config, error) {
 		LLMAPIKey:      os.Getenv("LLM_API_KEY"),
 		LLMGuestModel:  os.Getenv("LLM_GUEST_MODEL"),
 		TavilyAPIKey:   os.Getenv("TAVILY_API_KEY"),
+		ComfyUIURL:     os.Getenv("COMFYUI_URL"),
 		CookieSecure:   getEnvBool("COOKIE_SECURE", false),
 		SessionSecret:  os.Getenv("SESSION_SECRET"),
 		AllowedOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8080", "http://127.0.0.1:8080"},

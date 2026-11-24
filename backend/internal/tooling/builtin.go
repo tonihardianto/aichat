@@ -68,7 +68,7 @@ func RunBuiltin(ctx context.Context, name string, args json.RawMessage, tavilyKe
 
 func IsBuiltin(name string) bool {
 	switch name {
-	case "web_fetch", "web_search", "get_datetime", "get_weather", "calculate", "remember":
+	case "web_fetch", "web_search", "get_datetime", "get_weather", "calculate", "remember", "generate_image", "edit_image":
 		return true
 	}
 	return false

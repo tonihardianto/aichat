@@ -32,6 +32,7 @@ func NewRouter(h *Handlers, authService *auth.AuthService, cfg *config.Config, l
 
 	// Attachments
 	mux.Handle("POST /api/v1/attachments", auth.RequireAuth(UserRateLimitMiddleware(userRateLimiter, http.HandlerFunc(h.HandleUploadAttachment))))
+	mux.Handle("GET /api/v1/generated/{name}", auth.RequireAuth(http.HandlerFunc(h.HandleGetGeneratedImage)))
 	mux.Handle("GET /api/v1/attachments/{id}/content", auth.RequireAuth(http.HandlerFunc(h.HandleGetAttachmentContent)))
 
 	// AI extensions

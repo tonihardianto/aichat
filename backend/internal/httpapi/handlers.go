@@ -297,6 +297,23 @@ func (h *Handlers) HandleGetAttachmentContent(w http.ResponseWriter, r *http.Req
 	_, _ = io.Copy(w, rc)
 }
 
+func (h *Handlers) HandleGetGeneratedImage(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		observability.WriteError(w, http.StatusUnauthorized, "unauthorized", "Autentikasi diperlukan")
+		return
+	}
+	rc, contentType, err := h.chatService.GetGeneratedImage(r.Context(), user.ID, r.PathValue("name"))
+	if err != nil {
+		observability.WriteError(w, http.StatusNotFound, "not_found", "Gambar tidak ditemukan")
+		return
+	}
+	defer rc.Close()
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	_, _ = io.Copy(w, rc)
+}
+
 // Conversations
 func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r.Context())
@@ -514,6 +531,10 @@ func (h *Handlers) HandleGuestChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.Content) == "" || len([]rune(req.Content)) > chat.MaxContentLength {
 		observability.WriteError(w, http.StatusBadRequest, "invalid_content", "Pesan kosong atau terlalu panjang")
+		return
+	}
+	if chat.IsImagineCommand(req.Content) {
+		observability.WriteError(w, http.StatusForbidden, "login_required", "Pembuatan gambar (/imagine) hanya tersedia setelah login")
 		return
 	}
 	guestModel := h.chatService.GuestModel()
