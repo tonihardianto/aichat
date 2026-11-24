@@ -3,7 +3,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import type { ElementContent } from "hast";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { Check, ChevronRight, Copy, RefreshCw, Sparkles } from "lucide-react";
+import { Check, ChevronRight, Copy, Download, ExternalLink, RefreshCw, Sparkles } from "lucide-react";
 import type { Message } from "@/types/chat";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -19,6 +19,23 @@ function CopyButton({ value, label = "Salin" }: { value: string; label?: string 
     try { await navigator.clipboard.writeText(value); setCopied(true); window.setTimeout(() => setCopied(false), 1500); } catch { setCopied(false); }
   };
   return <Tooltip><TooltipTrigger asChild><Button type="button" size="icon" variant="ghost" aria-label={label} onClick={copy} className="size-8">{copied ? <Check /> : <Copy />}</Button></TooltipTrigger><TooltipContent>{copied ? "Tersalin" : label}</TooltipContent></Tooltip>;
+}
+
+const imageActionClass = "inline-flex size-8 items-center justify-center rounded-md bg-background/80 text-foreground shadow-sm backdrop-blur transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/** Markdown image with download / open-in-new-tab actions (images are same-origin, so `download` works). */
+function ChatImage({ src, alt }: { src?: string; alt?: string }) {
+  if (!src) return null;
+  const filename = (src.split("?")[0].split("/").pop() || "gambar.png").replace(/[^\w.-]/g, "_");
+  return (
+    <span className="group relative my-2 inline-block max-w-full align-top">
+      <img src={src} alt={alt ?? ""} loading="lazy" className="block max-h-[32rem] max-w-full rounded-xl border object-contain" />
+      <span className="absolute right-2 top-2 flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+        <a href={src} download={filename} aria-label="Unduh gambar" title="Unduh gambar" className={imageActionClass}><Download className="size-4" /></a>
+        <a href={src} target="_blank" rel="noopener noreferrer" aria-label="Buka gambar di tab baru" title="Buka di tab baru" className={imageActionClass}><ExternalLink className="size-4" /></a>
+      </span>
+    </span>
+  );
 }
 
 /** Live "thinking" indicator: no background, streams reasoning text, shows elapsed time. */
@@ -101,7 +118,7 @@ const markdownComponents: Components = {
       </code>
     );
   },
-  img: ({ node: _node, alt, ...props }) => <img {...props} alt={alt ?? ""} loading="lazy" className="my-2 max-h-[32rem] max-w-full rounded-xl border object-contain" />,
+  img: ({ src, alt }) => <ChatImage src={typeof src === "string" ? src : undefined} alt={alt} />,
   a: ({ ...props }) => <a {...props} className="text-primary underline underline-offset-4" />,
   table: ({ ...props }) => <div className="overflow-x-auto"><table {...props} /></div>,
 };
