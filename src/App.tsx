@@ -11,6 +11,7 @@ import { Composer } from "@/components/chat/Composer";
 import { ModelSelect } from "@/components/chat/ModelSelect";
 import { AuthModal } from "@/components/auth/AuthModal";
 import { ExtensionsDialog } from "@/components/chat/ExtensionsDialog";
+import { ImageGenerator } from "@/components/chat/ImageGenerator";
 import { apiGenerateTitle } from "@/lib/api";
 import { titleFromMessages } from "@/lib/title";
 import { UNTITLED_CONVERSATION } from "@/types/chat";
@@ -34,6 +35,8 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [extensionsOpen, setExtensionsOpen] = useState(false);
+  const [view, setView] = useState<"chat" | "images">("chat");
+  const imagesView = view === "images" && Boolean(auth.user);
   const [theme, setTheme] = useState<ThemePreference>(initialTheme);
 
   useEffect(() => {
@@ -83,12 +86,14 @@ export default function App() {
     activeId: conversations.activeId,
     onSelect: (id: string) => {
       conversations.select(id);
+      setView("chat");
       setMobileOpen(false);
       chat.clearError();
     },
     onNew: () => {
       conversations.createConversation();
       chat.clearError();
+      setView("chat");
       setMobileOpen(false);
     },
     onRename: conversations.rename,
@@ -102,6 +107,11 @@ export default function App() {
     },
     onOpenAuth: () => setAuthOpen(true),
     onOpenExtensions: () => setExtensionsOpen(true),
+    onOpenImages: () => {
+      setView("images");
+      setMobileOpen(false);
+    },
+    imagesActive: imagesView,
   };
 
   const empty = conversations.activeConversation.messages.length === 0;
@@ -128,7 +138,7 @@ export default function App() {
             <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground md:hidden">
               <MessageSquare className="size-4" />
             </div>
-            <h1 className="truncate text-sm font-semibold md:hidden">AI Chat</h1>
+            <h1 className="truncate text-sm font-semibold md:hidden">{imagesView ? "Image Generator" : "AI Chat"}</h1>
             <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
               {!auth.user && (
                 <Button
@@ -142,7 +152,7 @@ export default function App() {
                   <span>Masuk</span>
                 </Button>
               )}
-            <ModelSelect
+            {!imagesView && <ModelSelect
                 models={models.models}
                 value={models.selectedModel}
                 loading={models.isLoading}
@@ -151,7 +161,7 @@ export default function App() {
                 onChange={models.setSelectedModel}
                 onReload={models.reload}
                 guestMode={!auth.user}
-              />
+              />}
               <label className="sr-only" htmlFor="tema">
                 Tema
               </label>
@@ -167,6 +177,7 @@ export default function App() {
               </select>
             </div>
           </header>
+          {imagesView && auth.user ? <ImageGenerator userId={auth.user.id} /> : <>
           <MessageList
             messages={conversations.activeConversation.messages}
             isStreaming={chat.isStreaming}
@@ -198,6 +209,7 @@ export default function App() {
               guestMode={!auth.user}
             />
           </div>
+          </>}
         </section>
       </main>
 

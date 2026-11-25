@@ -14,6 +14,7 @@ func NewRouter(h *Handlers, authService *auth.AuthService, cfg *config.Config, l
 	authRateLimiter := NewRateLimiter(20, 20)  // 20 requests/min per IP
 	userRateLimiter := NewRateLimiter(120, 30) // 120 requests/min per User
 	guestChatRateLimiter := NewRateLimiter(10, 5)
+	imageGenRateLimiter := NewRateLimiter(10, 3) // image generation is slow and billed: 10/min, burst 3
 
 	// Health probes
 	mux.HandleFunc("GET /healthz", h.HandleHealthz)
@@ -32,6 +33,8 @@ func NewRouter(h *Handlers, authService *auth.AuthService, cfg *config.Config, l
 
 	// Attachments
 	mux.Handle("POST /api/v1/attachments", auth.RequireAuth(UserRateLimitMiddleware(userRateLimiter, http.HandlerFunc(h.HandleUploadAttachment))))
+	mux.Handle("GET /api/v1/images/config", auth.RequireAuth(http.HandlerFunc(h.HandleImageGenConfig)))
+	mux.Handle("POST /api/v1/images/generate", auth.RequireAuth(UserRateLimitMiddleware(imageGenRateLimiter, http.HandlerFunc(h.HandleImageGenerate))))
 	mux.Handle("GET /api/v1/generated/{name}", auth.RequireAuth(http.HandlerFunc(h.HandleGetGeneratedImage)))
 	mux.Handle("GET /api/v1/attachments/{id}/content", auth.RequireAuth(http.HandlerFunc(h.HandleGetAttachmentContent)))
 

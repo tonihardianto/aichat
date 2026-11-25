@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -142,9 +143,19 @@ func altText(prompt string) string {
 	return string(r)
 }
 
+var generatedContentTypes = map[string]string{"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}
+
+// storeGeneratedImage saves an image for the user; the extension follows the real image type.
 func (s *Service) storeGeneratedImage(ctx context.Context, userID string, data []byte) (string, error) {
-	name := uuid.New().String() + ".png"
-	if err := s.store.Upload(ctx, "users/"+userID+"/generated/"+name, "image/png", bytes.NewReader(data), int64(len(data))); err != nil {
+	ext := "png"
+	switch http.DetectContentType(data) {
+	case "image/jpeg":
+		ext = "jpg"
+	case "image/webp":
+		ext = "webp"
+	}
+	name := uuid.New().String() + "." + ext
+	if err := s.store.Upload(ctx, "users/"+userID+"/generated/"+name, generatedContentTypes[ext], bytes.NewReader(data), int64(len(data))); err != nil {
 		return "", err
 	}
 	return name, nil

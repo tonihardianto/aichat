@@ -405,3 +405,30 @@ export async function apiCancelMessage(conversationId: string, messageId: string
 
 export async function apiListMemories(): Promise<ApiMemory[]> { return request<ApiMemory[]>("/api/v1/memories"); }
 export async function apiDeleteMemory(id: string): Promise<void> { await request<void>(`/api/v1/memories/${id}`, { method: "DELETE" }); }
+
+export type ImageGenConfig = { enabled: boolean; models: string[] };
+export type ImageGenParams = {
+  model: string;
+  prompt: string;
+  n: number;
+  size: string;
+  quality: string;
+  background: string;
+  outputFormat: string;
+  watermark: boolean;
+  promptExtend: boolean;
+};
+export type GeneratedImage = { name: string; url: string };
+
+export async function apiImageGenConfig(): Promise<ImageGenConfig> {
+  return request<ImageGenConfig>("/api/v1/images/config");
+}
+
+export async function apiGenerateImages(params: ImageGenParams, signal?: AbortSignal): Promise<GeneratedImage[]> {
+  const res = await request<{ images: GeneratedImage[] }>("/api/v1/images/generate", {
+    method: "POST",
+    body: JSON.stringify(params),
+    signal,
+  });
+  return res.images;
+}

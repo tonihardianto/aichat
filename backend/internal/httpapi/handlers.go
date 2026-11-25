@@ -297,6 +297,48 @@ func (h *Handlers) HandleGetAttachmentContent(w http.ResponseWriter, r *http.Req
 	_, _ = io.Copy(w, rc)
 }
 
+func (h *Handlers) HandleImageGenConfig(w http.ResponseWriter, r *http.Request) {
+	enabled, models := h.chatService.ImageGenConfig()
+	if models == nil {
+		models = []string{}
+	}
+	observability.WriteJSON(w, http.StatusOK, map[string]any{"enabled": enabled, "models": models})
+}
+
+func (h *Handlers) HandleImageGenerate(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		observability.WriteError(w, http.StatusUnauthorized, "unauthorized", "Autentikasi diperlukan")
+		return
+	}
+	var req chat.ImageGenRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+		observability.WriteError(w, http.StatusBadRequest, "invalid_request", "Format request tidak valid")
+		return
+	}
+	names, err := h.chatService.GenerateImages(r.Context(), user.ID, req)
+	if err != nil {
+		var reqErr *chat.ImageRequestError
+		switch {
+		case errors.As(err, &reqErr):
+			observability.WriteError(w, http.StatusBadRequest, "invalid_image_request", reqErr.Msg)
+		case errors.Is(err, chat.ErrImageGenDisabled):
+			observability.WriteError(w, http.StatusServiceUnavailable, "image_disabled", "Generator gambar belum dikonfigurasi di server")
+		case errors.Is(err, context.Canceled):
+			return
+		default:
+			h.logger.Error("image_generate_failed", "error", err.Error())
+			observability.WriteError(w, http.StatusBadGateway, "image_failed", "Gagal membuat gambar: "+err.Error())
+		}
+		return
+	}
+	images := make([]map[string]string, 0, len(names))
+	for _, n := range names {
+		images = append(images, map[string]string{"name": n, "url": "/api/v1/generated/" + n})
+	}
+	observability.WriteJSON(w, http.StatusOK, map[string]any{"images": images})
+}
+
 func (h *Handlers) HandleGetGeneratedImage(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r.Context())
 	if user == nil {

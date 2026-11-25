@@ -1035,7 +1035,7 @@ func (s *Service) DeleteMemory(ctx context.Context, userID, id string) error {
 	return s.repo.DeleteMemory(ctx, userID, id)
 }
 
-var generatedImageName = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$`)
+var generatedImageName = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpg|webp)$`)
 
 // saveGeneratedImage stores a ComfyUI result for the user and shows it in the chat itself.
 // The model never copies the image URL (small models garble UUIDs), it only gets a short confirmation.
@@ -1060,11 +1060,11 @@ func (s *Service) GetGeneratedImage(ctx context.Context, userID, name string) (i
 	if !generatedImageName.MatchString(name) {
 		return nil, "", repository.ErrNotFound
 	}
-	rc, ct, err := s.store.Download(ctx, "users/"+userID+"/generated/"+name)
+	rc, _, err := s.store.Download(ctx, "users/"+userID+"/generated/"+name)
 	if err != nil {
 		return nil, "", repository.ErrNotFound
 	}
-	return rc, ct, nil
+	return rc, generatedContentTypes[name[strings.LastIndex(name, ".")+1:]], nil
 }
 
 // withDefaultFirst moves the configured default model to the front (the UI preselects the first model).

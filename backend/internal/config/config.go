@@ -21,6 +21,9 @@ type Config struct {
 	ExtraProviders  []ExtraProviderConfig
 	TavilyAPIKey    string
 	ComfyUIURL      string
+	ImageAPIURL     string
+	ImageAPIKey     string
+	ImageModels     []string
 	CookieSecure    bool
 	SessionSecret   string
 	AllowedOrigins  []string
@@ -147,6 +150,9 @@ func Load() (*Config, error) {
 		LLMDefaultModel: os.Getenv("LLM_DEFAULT_MODEL"),
 		TavilyAPIKey:    os.Getenv("TAVILY_API_KEY"),
 		ComfyUIURL:      os.Getenv("COMFYUI_URL"),
+		ImageAPIURL:     strings.TrimSpace(os.Getenv("IMAGE_API_URL")),
+		ImageAPIKey:     strings.TrimSpace(os.Getenv("IMAGE_API_KEY")),
+		ImageModels:     splitList(getEnv("IMAGE_MODELS", "cx/gpt-image-2.5")),
 		CookieSecure:    getEnvBool("COOKIE_SECURE", false),
 		SessionSecret:   os.Getenv("SESSION_SECRET"),
 		AllowedOrigins:  []string{"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8080", "http://127.0.0.1:8080"},
@@ -177,4 +183,14 @@ func Load() (*Config, error) {
 	cfg.ExtraProviders = extras
 
 	return cfg, nil
+}
+
+func splitList(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LogOut, MoreHorizontal, Pencil, Plus, Trash2, User as UserIcon, Sparkles, Wrench } from "lucide-react";
+import { ImageIcon, LogOut, MoreHorizontal, Pencil, Plus, Trash2, User as UserIcon, Sparkles, Wrench } from "lucide-react";
 import type { Conversation } from "@/types/chat";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +23,8 @@ type SidebarProps = {
   onLogout?: () => void;
   onOpenAuth?: () => void;
   onOpenExtensions?: () => void;
+  onOpenImages?: () => void;
+  imagesActive?: boolean;
 };
 
 export function Sidebar({
@@ -36,6 +38,8 @@ export function Sidebar({
   onLogout,
   onOpenAuth,
   onOpenExtensions,
+  onOpenImages,
+  imagesActive = false,
 }: SidebarProps) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const guestMode = !user;
@@ -54,13 +58,21 @@ export function Sidebar({
       {!guestMode && <Button className="w-full justify-start gap-2" variant="outline" onClick={onNew}>
         <Plus />Percakapan baru
       </Button>}
+      {!guestMode && onOpenImages && <Button
+        className={`mt-2 w-full justify-start gap-2 ${imagesActive ? "bg-accent text-accent-foreground" : ""}`}
+        variant="ghost"
+        onClick={onOpenImages}
+        aria-current={imagesActive ? "page" : undefined}
+      >
+        <ImageIcon />Image Generator
+      </Button>}
       {guestMode ? <p className="px-2 pb-2 pt-6 text-xs text-muted-foreground">Riwayat tamu hanya tersedia selama sesi ini.</p> : <h2 className="px-2 pb-2 pt-6 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Percakapan</h2>}
       <nav aria-label={guestMode ? "Percakapan sementara" : "Riwayat percakapan"} className="min-h-0 flex-1 space-y-1 overflow-y-auto">
         {conversations.map((conversation) => (
           <div
             key={conversation.id}
             className={`group flex items-center rounded-lg transition-colors ${
-              activeId === conversation.id ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+              activeId === conversation.id && !imagesActive ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             }`}
           >
             {!guestMode && renaming === conversation.id ? (
@@ -88,7 +100,7 @@ export function Sidebar({
             ) : (
               <button
                 onClick={() => onSelect(conversation.id)}
-                aria-current={activeId === conversation.id ? "page" : undefined}
+                aria-current={activeId === conversation.id && !imagesActive ? "page" : undefined}
                 className="min-w-0 flex-1 truncate px-3 py-2 text-left text-sm"
               >
                 {conversation.title}
