@@ -88,3 +88,23 @@ func TestImageAPIGenerateReportsProviderError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestImageItemPrefersBase64ThenFallsBackToURL(t *testing.T) {
+	// Documented reply shape: {"data":[{"url":"...","b64_json":"..."}]}
+	items, err := parseImageResponse(strings.NewReader(`{"data":[{"url":"http://127.0.0.1:1/never-fetched.png","b64_json":"` + b64("FROM-B64") + `"}]}`))
+	if err != nil || len(items) != 1 {
+		t.Fatalf("got %v, %v", items, err)
+	}
+	if got, err := items[0].bytes(context.Background()); err != nil || string(got) != "FROM-B64" {
+		t.Fatalf("b64 must win when both are present: %q, %v", got, err)
+	}
+
+	// url only (empty b64_json): downloaded; private/loopback targets are refused by the SSRF guard.
+	items, _ = parseImageResponse(strings.NewReader(`{"data":[{"url":"http://127.0.0.1:1/x.png","b64_json":""}]}`))
+	if _, err := items[0].bytes(context.Background()); err == nil || !strings.Contains(err.Error(), "private") {
+		t.Fatalf("loopback URL must be blocked, got %v", err)
+	}
+	if _, err := (imageItem{URL: "ftp://example.com/x.png"}).bytes(context.Background()); err == nil {
+		t.Fatal("non-http URL must be rejected")
+	}
+}

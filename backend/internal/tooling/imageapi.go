@@ -201,8 +201,8 @@ func (it imageItem) bytes(ctx context.Context) ([]byte, error) {
 	if it.URL == "" {
 		return nil, errors.New("item gambar kosong")
 	}
-	if !strings.HasPrefix(it.URL, "https://") {
-		return nil, errors.New("URL gambar dari layanan harus HTTPS")
+	if !strings.HasPrefix(it.URL, "https://") && !strings.HasPrefix(it.URL, "http://") {
+		return nil, errors.New("URL gambar dari layanan tidak valid")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, it.URL, nil)
 	if err != nil {
