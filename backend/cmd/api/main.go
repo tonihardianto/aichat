@@ -82,7 +82,19 @@ func main() {
 	}
 
 	// Provider client
-	prov := provider.NewOpenAIProvider(cfg.LLMBaseURL, cfg.LLMAPIKey)
+	var prov provider.Provider = provider.NewOpenAIProvider(cfg.LLMBaseURL, cfg.LLMAPIKey)
+	if len(cfg.ExtraProviders) > 0 {
+		extras := make([]provider.ExtraProvider, 0, len(cfg.ExtraProviders))
+		for _, e := range cfg.ExtraProviders {
+			extras = append(extras, provider.ExtraProvider{
+				Name:     e.Name,
+				Provider: provider.NewOpenAIProvider(e.BaseURL, e.APIKey),
+				Models:   e.Models,
+			})
+			logger.Info("extra_llm_provider_registered", "name", e.Name, "base_url", e.BaseURL)
+		}
+		prov = provider.NewMultiProvider(prov, extras)
+	}
 
 	// Auth & Chat services
 	authService := auth.NewAuthService(repo, cfg)

@@ -1,0 +1,14 @@
+{
+  "providers": [
+    {
+      "name": "mac",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "models": ["baytout3/qwen3.5-uncensored:4b"]
+    },
+    {
+      "name": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY"
+    }
+  ]
+}
