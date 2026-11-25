@@ -3,7 +3,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import type { ElementContent } from "hast";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { Check, ChevronRight, Copy, RefreshCw, Sparkles } from "lucide-react";
+import { Check, ChevronRight, Copy, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
 import type { Message } from "@/types/chat";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,7 +12,7 @@ import { CodePreview } from "@/components/chat/CodePreview";
 import { ChatImage } from "@/components/chat/ChatImage";
 import { Message as MessageRoot, MessageContent, MessageFooter } from "@/components/ui/message";
 
-type Props = { message: Message; streaming?: boolean; onRegenerate?: () => void };
+type Props = { message: Message; streaming?: boolean; onRegenerate?: () => void; onContinue?: () => void };
 
 function CopyButton({ value, label = "Salin" }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -107,7 +107,7 @@ const markdownComponents: Components = {
   table: ({ ...props }) => <div className="overflow-x-auto"><table {...props} /></div>,
 };
 
-export function MessageBubble({ message, streaming, onRegenerate }: Props) {
+export function MessageBubble({ message, streaming, onRegenerate, onContinue }: Props) {
   const user = message.role === "user";
   return (
     <TooltipProvider delayDuration={300}>
@@ -131,6 +131,13 @@ export function MessageBubble({ message, streaming, onRegenerate }: Props) {
             </BubbleContent>
           </Bubble>
         ) : null}
+        {message.status === "truncated" && !streaming && (
+          <div role="status" className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
+            <TriangleAlert className="size-4 shrink-0 text-amber-500" />
+            <span className="min-w-0 flex-1">Jawaban terpotong karena batas konteks atau token model tercapai. Jika sering terjadi, mulai percakapan baru atau besarkan konteks model.</span>
+            {onContinue && <Button type="button" size="sm" variant="outline" className="h-7" onClick={onContinue}>Lanjutkan</Button>}
+          </div>
+        )}
         {message.outputTokens !== undefined && <p className="mt-2 text-xs text-muted-foreground">{message.outputTokens} token{message.tokensPerSecond ? ` · ${message.tokensPerSecond.toFixed(1)} token/detik` : ""}</p>}
         {message.content && <MessageFooter className="px-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"><CopyButton value={message.content} />{onRegenerate && <Tooltip><TooltipTrigger asChild><Button type="button" size="icon" variant="ghost" aria-label="Buat ulang jawaban" onClick={onRegenerate} className="size-8"><RefreshCw /></Button></TooltipTrigger><TooltipContent>Buat ulang jawaban</TooltipContent></Tooltip>}</MessageFooter>}
       </>}

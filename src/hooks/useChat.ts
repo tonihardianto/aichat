@@ -188,7 +188,7 @@ export function useChat(
                       ...m,
                       id: msg.id,
                       content: msg.content,
-                      status: "complete",
+                      status: msg.status === "truncated" ? "truncated" : "complete",
                       outputTokens: msg.outputTokens,
                       tokensPerSecond: msg.tokensPerSecond,
                     };
@@ -343,7 +343,7 @@ export function useChat(
                 ...m,
                 id: msg.id,
                 content: msg.content,
-                status: "complete",
+                status: msg.status === "truncated" ? "truncated" : "complete",
                 outputTokens: msg.outputTokens,
                 tokensPerSecond: msg.tokensPerSecond,
               };

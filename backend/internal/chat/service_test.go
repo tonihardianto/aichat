@@ -320,3 +320,32 @@ func TestListModelsPutsDefaultModelFirst(t *testing.T) {
 		t.Fatalf("remaining order changed: %v", models)
 	}
 }
+
+func TestStreamMessageMarksTruncatedAnswers(t *testing.T) {
+	for _, tc := range []struct{ reason, want string }{{"stop", "complete"}, {"length", "truncated"}} {
+		prov := provider.NewFakeProvider([]string{"llama3.2"}, []string{"Jawaban yang terpotong di tengah"})
+		prov.FinishReason = tc.reason
+		svc := chat.NewService(repository.NewMemoryRepo(), storage.NewMemoryStorage(), prov, &config.Config{}, observability.NewLogger())
+		ctx := context.Background()
+		conv, err := svc.CreateConversation(ctx, "u1", "Uji")
+		if err != nil {
+			t.Fatal(err)
+		}
+		writer := &mockSSEWriter{}
+		if err := svc.StreamMessage(ctx, "u1", chat.StreamMessageParams{ConversationID: conv.ID, Content: "Halo", Model: "llama3.2", Writer: writer}); err != nil {
+			t.Fatal(err)
+		}
+		done, ok := writer.data[len(writer.data)-1].(map[string]any)["message"].(repository.Message)
+		if !ok || done.Status != tc.want {
+			t.Fatalf("finish %q: SSE completed status = %q, want %q", tc.reason, done.Status, tc.want)
+		}
+		detail, err := svc.GetConversation(ctx, "u1", conv.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		last := detail.Messages[len(detail.Messages)-1]
+		if last.Role != "assistant" || last.Status != tc.want {
+			t.Fatalf("finish %q: stored status = %q, want %q", tc.reason, last.Status, tc.want)
+		}
+	}
+}

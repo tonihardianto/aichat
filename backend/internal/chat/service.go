@@ -98,6 +98,7 @@ func (s *Service) StreamGuestMessage(ctx context.Context, conversationID, conten
 		return fmt.Errorf("start guest stream: %w", err)
 	}
 	var answer strings.Builder
+	truncated := false // model stopped because its context/token limit was reached
 	for chunk := range chunks {
 		if chunk.Error != nil {
 			return fmt.Errorf("guest stream: %w", chunk.Error)
@@ -115,11 +116,12 @@ func (s *Service) StreamGuestMessage(ctx context.Context, conversationID, conten
 			writer.Flush()
 		}
 		if chunk.FinishReason != "" {
+			truncated = chunk.FinishReason == "length"
 			break
 		}
 	}
 	assistantMsg.Content = answer.String()
-	assistantMsg.Status = "complete"
+	assistantMsg.Status = finalStatus(truncated)
 	_ = writer.WriteEvent("message.completed", map[string]any{"message": assistantMsg})
 	writer.Flush()
 	return nil
@@ -484,6 +486,7 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 	}
 
 	var accumulated strings.Builder
+	truncated := false // model stopped because its context/token limit was reached
 	lastPersistedLen := 0
 	lastPersistTime := time.Now()
 	var finalInputTokens *int
@@ -545,6 +548,7 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 		}
 
 		if chunk.FinishReason != "" {
+			truncated = chunk.FinishReason == "length"
 			break
 		}
 	}
@@ -552,14 +556,15 @@ func (s *Service) StreamMessage(ctx context.Context, userID string, params Strea
 	// Completion
 	completeTime := time.Now().UTC()
 	contentFinal := accumulated.String()
-	_ = s.repo.CompleteMessage(ctx, asstMsgID, contentFinal, "complete", finalInputTokens, finalOutputTokens, finalTokensPerSec, completeTime)
+	status := finalStatus(truncated)
+	_ = s.repo.CompleteMessage(ctx, asstMsgID, contentFinal, status, finalInputTokens, finalOutputTokens, finalTokensPerSec, completeTime)
 
 	completedMsg := repository.Message{
 		ID:              asstMsgID,
 		ConversationID:  params.ConversationID,
 		Role:            "assistant",
 		Content:         contentFinal,
-		Status:          "complete",
+		Status:          status,
 		Model:           params.Model,
 		InputTokens:     finalInputTokens,
 		OutputTokens:    finalOutputTokens,
@@ -719,6 +724,7 @@ func (s *Service) Regenerate(ctx context.Context, userID, convID, assistantMsgID
 	}
 
 	var accumulated strings.Builder
+	truncated := false // model stopped because its context/token limit was reached
 	lastPersistedLen := 0
 	lastPersistTime := time.Now()
 	var finalInputTokens *int
@@ -777,20 +783,22 @@ func (s *Service) Regenerate(ctx context.Context, userID, convID, assistantMsgID
 		}
 
 		if chunk.FinishReason != "" {
+			truncated = chunk.FinishReason == "length"
 			break
 		}
 	}
 
 	completeTime := time.Now().UTC()
 	contentFinal := accumulated.String()
-	_ = s.repo.CompleteMessage(ctx, asstMsgID, contentFinal, "complete", finalInputTokens, finalOutputTokens, finalTokensPerSec, completeTime)
+	status := finalStatus(truncated)
+	_ = s.repo.CompleteMessage(ctx, asstMsgID, contentFinal, status, finalInputTokens, finalOutputTokens, finalTokensPerSec, completeTime)
 
 	completedMsg := repository.Message{
 		ID:              asstMsgID,
 		ConversationID:  convID,
 		Role:            "assistant",
 		Content:         contentFinal,
-		Status:          "complete",
+		Status:          status,
 		Model:           asstMsg.Model,
 		InputTokens:     finalInputTokens,
 		OutputTokens:    finalOutputTokens,
@@ -1080,4 +1088,13 @@ func withDefaultFirst(models []string, def string) []string {
 		}
 	}
 	return models
+}
+
+// finalStatus is "truncated" when the model ran out of context or tokens mid-answer, so the UI can say so
+// instead of showing a cut-off reply as if it were finished.
+func finalStatus(truncated bool) string {
+	if truncated {
+		return "truncated"
+	}
+	return "complete"
 }

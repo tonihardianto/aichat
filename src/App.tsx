@@ -185,6 +185,9 @@ export default function App() {
             onSuggestion={(value) => {
               void chat.send(value);
             }}
+            onContinue={() => {
+              void chat.send("Lanjutkan jawabanmu yang terpotong tadi, mulai dari kata terakhir tanpa mengulang.");
+            }}
           />
           <div className={`shrink-0 ${empty ? "mt-auto" : ""}`}>
             {chat.error && (

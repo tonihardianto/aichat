@@ -13,7 +13,7 @@ export type Message = {
   content: string;
   /** Live thinking text; only kept for the current session. */
   reasoning?: string;
-  status?: "complete" | "streaming" | "cancelled" | "failed";
+  status?: "complete" | "streaming" | "cancelled" | "failed" | "truncated";
   image?: ImageAttachment;
   outputTokens?: number;
   tokensPerSecond?: number;

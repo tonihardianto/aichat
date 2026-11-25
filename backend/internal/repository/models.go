@@ -46,7 +46,7 @@ type Message struct {
 	ConversationID  string       `json:"conversationId"`
 	Role            string       `json:"role"`
 	Content         string       `json:"content"`
-	Status          string       `json:"status"` // complete, streaming, cancelled, failed
+	Status          string       `json:"status"` // complete, streaming, cancelled, failed, truncated
 	Model           string       `json:"model,omitempty"`
 	InputTokens     *int         `json:"inputTokens,omitempty"`
 	OutputTokens    *int         `json:"outputTokens,omitempty"`

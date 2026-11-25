@@ -23,7 +23,7 @@ export type ApiMessage = {
   conversationId?: string;
   role: Role;
   content: string;
-  status: "complete" | "streaming" | "cancelled" | "failed";
+  status: "complete" | "streaming" | "cancelled" | "failed" | "truncated";
   model?: string;
   inputTokens?: number;
   outputTokens?: number;

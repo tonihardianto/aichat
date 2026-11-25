@@ -413,6 +413,8 @@ func (p *OpenAIProvider) streamOpenAIMessages(ctx context.Context, model string,
 type FakeProvider struct {
 	Models    []string
 	Responses []string
+	// FinishReason is what the stream reports at the end; empty means "stop". Use "length" to mimic a full context.
+	FinishReason string
 }
 
 func NewFakeProvider(models []string, responses []string) *FakeProvider {
@@ -452,8 +454,12 @@ func (f *FakeProvider) Stream(ctx context.Context, model string, messages []Chat
 			}
 		}
 
+		reason := f.FinishReason
+		if reason == "" {
+			reason = "stop"
+		}
 		out <- StreamChunk{
-			FinishReason: "stop",
+			FinishReason: reason,
 			InputTokens:  15,
 			OutputTokens: len(words),
 			TokensPerSec: 25.0,
