@@ -305,3 +305,18 @@ func TestMemoriesCRUDViaService(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestListModelsPutsDefaultModelFirst(t *testing.T) {
+	prov := provider.NewFakeProvider([]string{"a", "b", "c"}, nil)
+	for def, want := range map[string]string{"c": "c", "": "a", "tidak-ada": "a"} {
+		svc := chat.NewService(repository.NewMemoryRepo(), storage.NewMemoryStorage(), prov, &config.Config{LLMDefaultModel: def}, observability.NewLogger())
+		models, err := svc.ListModels(context.Background())
+		if err != nil || len(models) != 3 || models[0] != want {
+			t.Fatalf("default %q: got %v, %v", def, models, err)
+		}
+	}
+	svc := chat.NewService(repository.NewMemoryRepo(), storage.NewMemoryStorage(), prov, &config.Config{LLMDefaultModel: "c"}, observability.NewLogger())
+	if models, _ := svc.ListModels(context.Background()); models[1] != "a" || models[2] != "b" {
+		t.Fatalf("remaining order changed: %v", models)
+	}
+}

@@ -146,7 +146,7 @@ func (s *Service) ListModels(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list models from provider: %w", err)
 	}
-	return provModels, nil
+	return withDefaultFirst(provModels, s.cfg.LLMDefaultModel), nil
 }
 
 func (s *Service) ListTools(ctx context.Context, userID string) ([]repository.Tool, error) {
@@ -1065,4 +1065,19 @@ func (s *Service) GetGeneratedImage(ctx context.Context, userID, name string) (i
 		return nil, "", repository.ErrNotFound
 	}
 	return rc, ct, nil
+}
+
+// withDefaultFirst moves the configured default model to the front (the UI preselects the first model).
+// Unknown or empty defaults leave the provider order untouched.
+func withDefaultFirst(models []string, def string) []string {
+	def = strings.TrimSpace(def)
+	for i, m := range models {
+		if m == def && i > 0 {
+			out := make([]string, 0, len(models))
+			out = append(out, m)
+			out = append(out, models[:i]...)
+			return append(out, models[i+1:]...)
+		}
+	}
+	return models
 }

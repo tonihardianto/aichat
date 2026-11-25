@@ -55,3 +55,45 @@ func TestConfigValidation(t *testing.T) {
 		t.Fatalf("expected guest model from env, got %q", cfg.LLMGuestModel)
 	}
 }
+
+func TestExtraProvidersFile(t *testing.T) {
+	os.Setenv("MYSQL_DSN", "user:pass@tcp(127.0.0.1:3306)/chat")
+	os.Setenv("SESSION_SECRET", "this-is-a-valid-session-secret-longer-than-32-bytes")
+	os.Setenv("LLM_BASE_URL", "http://127.0.0.1:11434/v1")
+	t.Cleanup(func() { os.Unsetenv("LLM_PROVIDERS_FILE"); os.Unsetenv("TEST_EXTRA_KEY") })
+
+	write := func(content string) {
+		path := t.TempDir() + "/providers.json"
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		os.Setenv("LLM_PROVIDERS_FILE", path)
+	}
+
+	os.Setenv("TEST_EXTRA_KEY", "rahasia")
+	write(`{"providers":[{"name":"mac","base_url":"http://10.0.0.5:11434/v1","api_key_env":"TEST_EXTRA_KEY","models":["qwen3"]}]}`)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ExtraProviders) != 1 || cfg.ExtraProviders[0].APIKey != "rahasia" || cfg.ExtraProviders[0].Models[0] != "qwen3" {
+		t.Fatalf("unexpected providers: %+v", cfg.ExtraProviders)
+	}
+
+	for name, bad := range map[string]string{
+		"nama kosong": `{"providers":[{"name":"","base_url":"http://x"}]}`,
+		"prefix ::":   `{"providers":[{"name":"a::b","base_url":"http://x"}]}`,
+		"duplikat":    `{"providers":[{"name":"a","base_url":"http://x"},{"name":"a","base_url":"http://y"}]}`,
+		"json rusak":  `{`,
+	} {
+		write(bad)
+		if _, err := config.Load(); err == nil {
+			t.Fatalf("%s: expected error", name)
+		}
+	}
+
+	os.Setenv("LLM_PROVIDERS_FILE", "/tidak/ada/providers.json")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("expected error for explicit missing file")
+	}
+}

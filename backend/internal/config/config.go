@@ -2,6 +2,8 @@ package config
 
 import (
 	"bufio"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -9,17 +11,78 @@ import (
 )
 
 type Config struct {
-	Port           string
-	MySQLDSN       string
-	StoragePath    string
-	LLMBaseURL     string
-	LLMAPIKey      string
-	LLMGuestModel  string
-	TavilyAPIKey   string
-	ComfyUIURL     string
-	CookieSecure   bool
-	SessionSecret  string
-	AllowedOrigins []string
+	Port            string
+	MySQLDSN        string
+	StoragePath     string
+	LLMBaseURL      string
+	LLMAPIKey       string
+	LLMGuestModel   string
+	LLMDefaultModel string
+	ExtraProviders  []ExtraProviderConfig
+	TavilyAPIKey    string
+	ComfyUIURL      string
+	CookieSecure    bool
+	SessionSecret   string
+	AllowedOrigins  []string
+}
+
+// ExtraProviderConfig mendefinisikan satu endpoint OpenAI-compatible tambahan
+// (Ollama di mesin lain, LM Studio, OpenRouter, dll).
+type ExtraProviderConfig struct {
+	Name      string   `json:"name"`
+	BaseURL   string   `json:"base_url"`
+	APIKey    string   `json:"api_key"`
+	APIKeyEnv string   `json:"api_key_env"` // nama env var; lebih aman daripada api_key
+	Models    []string `json:"models"`      // allowlist opsional
+}
+
+// loadExtraProviders membaca providers.json (atau path dari LLM_PROVIDERS_FILE).
+// File yang tidak ada bukan error; file yang rusak adalah error.
+func loadExtraProviders() ([]ExtraProviderConfig, error) {
+	path := os.Getenv("LLM_PROVIDERS_FILE")
+	explicit := path != ""
+	candidates := []string{path}
+	if !explicit {
+		candidates = []string{"providers.json", "../providers.json"}
+	}
+	for _, c := range candidates {
+		data, err := os.ReadFile(c)
+		if errors.Is(err, os.ErrNotExist) {
+			if explicit {
+				return nil, fmt.Errorf("LLM_PROVIDERS_FILE %q tidak ditemukan", c)
+			}
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("baca %s: %w", c, err)
+		}
+		var file struct {
+			Providers []ExtraProviderConfig `json:"providers"`
+		}
+		if err := json.Unmarshal(data, &file); err != nil {
+			return nil, fmt.Errorf("%s tidak valid: %w", c, err)
+		}
+		seen := map[string]bool{}
+		for i := range file.Providers {
+			p := &file.Providers[i]
+			p.Name, p.BaseURL = strings.TrimSpace(p.Name), strings.TrimSpace(p.BaseURL)
+			if p.Name == "" || p.BaseURL == "" {
+				return nil, fmt.Errorf("%s: provider #%d wajib punya name dan base_url", c, i+1)
+			}
+			if strings.Contains(p.Name, "::") {
+				return nil, fmt.Errorf("%s: nama provider %q tidak boleh mengandung '::'", c, p.Name)
+			}
+			if seen[p.Name] {
+				return nil, fmt.Errorf("%s: nama provider %q duplikat", c, p.Name)
+			}
+			seen[p.Name] = true
+			if p.APIKeyEnv != "" {
+				p.APIKey = os.Getenv(p.APIKeyEnv)
+			}
+		}
+		return file.Providers, nil
+	}
+	return nil, nil
 }
 
 func loadEnvFile(paths ...string) {
@@ -75,17 +138,18 @@ func Load() (*Config, error) {
 	loadEnvFile(".env", "../.env")
 
 	cfg := &Config{
-		Port:           getEnv("PORT", "8080"),
-		MySQLDSN:       os.Getenv("MYSQL_DSN"),
-		StoragePath:    getEnv("STORAGE_PATH", "data/attachments"),
-		LLMBaseURL:     os.Getenv("LLM_BASE_URL"),
-		LLMAPIKey:      os.Getenv("LLM_API_KEY"),
-		LLMGuestModel:  os.Getenv("LLM_GUEST_MODEL"),
-		TavilyAPIKey:   os.Getenv("TAVILY_API_KEY"),
-		ComfyUIURL:     os.Getenv("COMFYUI_URL"),
-		CookieSecure:   getEnvBool("COOKIE_SECURE", false),
-		SessionSecret:  os.Getenv("SESSION_SECRET"),
-		AllowedOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8080", "http://127.0.0.1:8080"},
+		Port:            getEnv("PORT", "8080"),
+		MySQLDSN:        os.Getenv("MYSQL_DSN"),
+		StoragePath:     getEnv("STORAGE_PATH", "data/attachments"),
+		LLMBaseURL:      os.Getenv("LLM_BASE_URL"),
+		LLMAPIKey:       os.Getenv("LLM_API_KEY"),
+		LLMGuestModel:   os.Getenv("LLM_GUEST_MODEL"),
+		LLMDefaultModel: os.Getenv("LLM_DEFAULT_MODEL"),
+		TavilyAPIKey:    os.Getenv("TAVILY_API_KEY"),
+		ComfyUIURL:      os.Getenv("COMFYUI_URL"),
+		CookieSecure:    getEnvBool("COOKIE_SECURE", false),
+		SessionSecret:   os.Getenv("SESSION_SECRET"),
+		AllowedOrigins:  []string{"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8080", "http://127.0.0.1:8080"},
 	}
 
 	if origins := os.Getenv("ALLOWED_ORIGINS"); origins != "" {
@@ -105,6 +169,12 @@ func Load() (*Config, error) {
 	if cfg.LLMBaseURL == "" {
 		return nil, fmt.Errorf("LLM_BASE_URL wajib diisi melalui environment variable")
 	}
+
+	extras, err := loadExtraProviders()
+	if err != nil {
+		return nil, err
+	}
+	cfg.ExtraProviders = extras
 
 	return cfg, nil
 }
