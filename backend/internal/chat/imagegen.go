@@ -8,8 +8,12 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
+	"chat/backend/internal/repository"
 	"chat/backend/internal/tooling"
+
+	"github.com/google/uuid"
 )
 
 // ImageRequestError is a validation problem the user can fix; its text is safe to show.
@@ -122,9 +126,9 @@ func (s *Service) validateImageRequest(r *ImageGenRequest) error {
 	return nil
 }
 
-// GenerateImages calls the external image API and stores the results for the user. It returns the file names.
+// GenerateImages calls the external image API, stores the results for the user and records them in the gallery.
 // refs are optional reference images sent along with the prompt.
-func (s *Service) GenerateImages(ctx context.Context, userID string, r ImageGenRequest, refs [][]byte) ([]string, error) {
+func (s *Service) GenerateImages(ctx context.Context, userID string, r ImageGenRequest, refs [][]byte) ([]repository.GeneratedImage, error) {
 	if !s.ImageGenConfig().Enabled {
 		return nil, ErrImageGenDisabled
 	}
@@ -135,24 +139,80 @@ func (s *Service) GenerateImages(ctx context.Context, userID string, r ImageGenR
 		return nil, err
 	}
 	api := tooling.ImageAPI{URL: s.cfg.ImageAPIURL, APIKey: s.cfg.ImageAPIKey}
-	apiReq := tooling.ImageAPIRequest{
+	images, err := api.Generate(ctx, tooling.ImageAPIRequest{
 		Model: r.Model, Prompt: r.Prompt, N: r.N, Size: r.Size, Quality: r.Quality, Background: r.Background,
 		OutputFormat: r.OutputFormat, Watermark: r.Watermark, PromptExtend: r.PromptExtend, References: refs,
-	}
-	images, err := api.Generate(ctx, apiReq)
+	})
 	if err != nil {
 		return nil, err
 	}
 	if len(images) > r.N {
 		images = images[:r.N]
 	}
-	names := make([]string, 0, len(images))
+	now := time.Now().UTC()
+	saved := make([]repository.GeneratedImage, 0, len(images))
+	fail := func(err error) ([]repository.GeneratedImage, error) {
+		for _, img := range saved { // do not leave half a batch behind
+			_, _ = s.repo.DeleteGeneratedImage(context.Background(), userID, img.ID)
+			_ = s.store.Delete(context.Background(), generatedKey(userID, img.FileName))
+		}
+		return nil, fmt.Errorf("gagal menyimpan gambar: %w", err)
+	}
 	for _, data := range images {
 		name, err := s.storeGeneratedImage(ctx, userID, data)
 		if err != nil {
-			return nil, fmt.Errorf("gagal menyimpan gambar: %w", err)
+			return fail(err)
 		}
-		names = append(names, name)
+		img := repository.GeneratedImage{ID: uuid.NewString(), UserID: userID, FileName: name, Prompt: r.Prompt, Model: r.Model, CreatedAt: now}
+		if err := s.repo.CreateGeneratedImage(ctx, &img); err != nil {
+			_ = s.store.Delete(context.Background(), generatedKey(userID, name))
+			return fail(err)
+		}
+		saved = append(saved, img)
 	}
-	return names, nil
+	return saved, nil
+}
+
+func generatedKey(userID, name string) string { return "users/" + userID + "/generated/" + name }
+
+const (
+	defaultGalleryLimit = 48
+	maxGalleryLimit     = 100
+)
+
+// ListGalleryImages returns the user's generated images, newest first.
+func (s *Service) ListGalleryImages(ctx context.Context, userID string, limit, offset int) ([]repository.GeneratedImage, error) {
+	if limit <= 0 {
+		limit = defaultGalleryLimit
+	}
+	limit = min(limit, maxGalleryLimit)
+	return s.repo.ListGeneratedImages(ctx, userID, limit, max(offset, 0))
+}
+
+// DeleteGalleryImage removes one image (record and file). It returns repository.ErrNotFound for someone else's image.
+func (s *Service) DeleteGalleryImage(ctx context.Context, userID, id string) error {
+	name, err := s.repo.DeleteGeneratedImage(ctx, userID, id)
+	if err != nil {
+		return err
+	}
+	s.deleteGeneratedFiles(ctx, userID, name)
+	return nil
+}
+
+// DeleteAllGalleryImages removes every gallery image of the user and returns how many there were.
+func (s *Service) DeleteAllGalleryImages(ctx context.Context, userID string) (int, error) {
+	names, err := s.repo.DeleteAllGeneratedImages(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	s.deleteGeneratedFiles(ctx, userID, names...)
+	return len(names), nil
+}
+
+func (s *Service) deleteGeneratedFiles(ctx context.Context, userID string, names ...string) {
+	for _, n := range names {
+		if err := s.store.Delete(context.WithoutCancel(ctx), generatedKey(userID, n)); err != nil {
+			s.logger.Error("generated_image_file_delete_failed", "error", err.Error(), "file", n)
+		}
+	}
 }

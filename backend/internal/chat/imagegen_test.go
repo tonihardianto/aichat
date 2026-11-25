@@ -57,10 +57,11 @@ func TestGenerateImagesStoresPerUser(t *testing.T) {
 	defer srv.Close()
 	svc := newImageService(&config.Config{ImageAPIURL: srv.URL, ImageAPIKey: "k", ImageModels: []string{"good"}})
 
-	names, err := svc.GenerateImages(context.Background(), "u1", chat.ImageGenRequest{Model: "good", Prompt: "kucing", N: 1}, nil)
-	if err != nil || len(names) != 1 || !strings.HasSuffix(names[0], ".png") {
-		t.Fatalf("got %v, %v (extra image beyond N must be dropped)", names, err)
+	imgs, err := svc.GenerateImages(context.Background(), "u1", chat.ImageGenRequest{Model: "good", Prompt: "kucing", N: 1}, nil)
+	if err != nil || len(imgs) != 1 || !strings.HasSuffix(imgs[0].FileName, ".png") {
+		t.Fatalf("got %v, %v (extra image beyond N must be dropped)", imgs, err)
 	}
+	names := []string{imgs[0].FileName}
 	rc, ct, err := svc.GetGeneratedImage(context.Background(), "u1", names[0])
 	if err != nil || ct != "image/png" {
 		t.Fatalf("owner read: %v %q", err, ct)
@@ -109,5 +110,55 @@ func TestGenerateImagesWithReferences(t *testing.T) {
 	}
 	if _, err := svc.GenerateImages(context.Background(), "u1", req, [][]byte{png, png, png, png, png}); !errors.As(err, &reqErr) {
 		t.Fatalf("too many references must be rejected, got %v", err)
+	}
+}
+
+func TestImageGalleryListAndDelete(t *testing.T) {
+	png := generateValidPNG()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString(png) + `"}]}`))
+	}))
+	defer srv.Close()
+	svc := newImageService(&config.Config{ImageAPIURL: srv.URL, ImageAPIKey: "k", ImageModels: []string{"good"}})
+	ctx := context.Background()
+	gen := func(user, prompt string) string {
+		imgs, err := svc.GenerateImages(ctx, user, chat.ImageGenRequest{Model: "good", Prompt: prompt, N: 1}, nil)
+		if err != nil || len(imgs) != 1 || imgs[0].Prompt != prompt || imgs[0].Model != "good" || imgs[0].ID == "" {
+			t.Fatalf("generate %q: %+v %v", prompt, imgs, err)
+		}
+		return imgs[0].ID
+	}
+	first, second := gen("u1", "pertama"), gen("u1", "kedua")
+	other := gen("u2", "milik user lain")
+
+	list, err := svc.ListGalleryImages(ctx, "u1", 0, 0)
+	if err != nil || len(list) != 2 || list[0].Prompt != "kedua" || list[1].Prompt != "pertama" {
+		t.Fatalf("u1 gallery must be newest first and private: %+v %v", list, err)
+	}
+	if page, _ := svc.ListGalleryImages(ctx, "u1", 1, 1); len(page) != 1 || page[0].Prompt != "pertama" {
+		t.Fatalf("pagination broken: %+v", page)
+	}
+
+	if err := svc.DeleteGalleryImage(ctx, "u1", other); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("deleting another user's image must be ErrNotFound, got %v", err)
+	}
+	if err := svc.DeleteGalleryImage(ctx, "u1", first); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := svc.GetGeneratedImage(ctx, "u1", list[1].FileName); err == nil {
+		t.Fatal("file must be gone after delete")
+	}
+	if rc, _, err := svc.GetGeneratedImage(ctx, "u1", list[0].FileName); err != nil {
+		t.Fatal("other image must stay")
+	} else {
+		rc.Close()
+	}
+
+	if n, err := svc.DeleteAllGalleryImages(ctx, "u1"); err != nil || n != 1 {
+		t.Fatalf("delete all: %d %v", n, err)
+	}
+	_ = second
+	if rest, _ := svc.ListGalleryImages(ctx, "u2", 0, 0); len(rest) != 1 {
+		t.Fatalf("u2 must be untouched: %+v", rest)
 	}
 }

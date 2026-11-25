@@ -90,3 +90,13 @@ type Memory struct {
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"createdAt"`
 }
+
+// GeneratedImage is an image made by the Image Generator page; the file lives in storage under FileName.
+type GeneratedImage struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"-"`
+	FileName  string    `json:"name"`
+	Prompt    string    `json:"prompt"`
+	Model     string    `json:"model"`
+	CreatedAt time.Time `json:"createdAt"`
+}

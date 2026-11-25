@@ -35,6 +35,9 @@ func NewRouter(h *Handlers, authService *auth.AuthService, cfg *config.Config, l
 	mux.Handle("POST /api/v1/attachments", auth.RequireAuth(UserRateLimitMiddleware(userRateLimiter, http.HandlerFunc(h.HandleUploadAttachment))))
 	mux.Handle("GET /api/v1/images/config", auth.RequireAuth(http.HandlerFunc(h.HandleImageGenConfig)))
 	mux.Handle("POST /api/v1/images/generate", auth.RequireAuth(UserRateLimitMiddleware(imageGenRateLimiter, http.HandlerFunc(h.HandleImageGenerate))))
+	mux.Handle("GET /api/v1/images", auth.RequireAuth(http.HandlerFunc(h.HandleListImages)))
+	mux.Handle("DELETE /api/v1/images/{id}", auth.RequireAuth(http.HandlerFunc(h.HandleDeleteImage)))
+	mux.Handle("DELETE /api/v1/images", auth.RequireAuth(http.HandlerFunc(h.HandleDeleteAllImages)))
 	mux.Handle("GET /api/v1/generated/{name}", auth.RequireAuth(http.HandlerFunc(h.HandleGetGeneratedImage)))
 	mux.Handle("GET /api/v1/attachments/{id}/content", auth.RequireAuth(http.HandlerFunc(h.HandleGetAttachmentContent)))
 

@@ -64,4 +64,10 @@ type Repository interface {
 	ListMemories(ctx context.Context, userID string) ([]Memory, error)
 	CreateMemory(ctx context.Context, m *Memory) error
 	DeleteMemory(ctx context.Context, userID, id string) error
+
+	// Image generator gallery. Deletes return the file names so the caller can remove the files.
+	CreateGeneratedImage(ctx context.Context, img *GeneratedImage) error
+	ListGeneratedImages(ctx context.Context, userID string, limit, offset int) ([]GeneratedImage, error)
+	DeleteGeneratedImage(ctx context.Context, userID, id string) (fileName string, err error)
+	DeleteAllGeneratedImages(ctx context.Context, userID string) ([]string, error)
 }

@@ -22,6 +22,7 @@ type MemoryRepo struct {
 	tools               map[string]*Tool
 	skills              map[string]*Skill
 	memories            map[string]*Memory
+	generatedImages     map[string]*GeneratedImage
 }
 
 func NewMemoryRepo() *MemoryRepo {
@@ -38,6 +39,7 @@ func NewMemoryRepo() *MemoryRepo {
 		tools:               make(map[string]*Tool),
 		skills:              make(map[string]*Skill),
 		memories:            make(map[string]*Memory),
+		generatedImages:     make(map[string]*GeneratedImage),
 	}
 }
 
@@ -539,4 +541,61 @@ func (m *MemoryRepo) DeleteMemory(_ context.Context, userID, id string) error {
 	}
 	delete(m.memories, id)
 	return nil
+}
+
+func (m *MemoryRepo) CreateGeneratedImage(_ context.Context, img *GeneratedImage) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c := *img
+	m.generatedImages[img.ID] = &c
+	return nil
+}
+
+func (m *MemoryRepo) ListGeneratedImages(_ context.Context, userID string, limit, offset int) ([]GeneratedImage, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	all := []GeneratedImage{}
+	for _, v := range m.generatedImages {
+		if v.UserID == userID {
+			all = append(all, *v)
+		}
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if !all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].CreatedAt.After(all[j].CreatedAt)
+		}
+		return all[i].ID < all[j].ID
+	})
+	if offset >= len(all) {
+		return []GeneratedImage{}, nil
+	}
+	all = all[offset:]
+	if limit < len(all) {
+		all = all[:limit]
+	}
+	return all, nil
+}
+
+func (m *MemoryRepo) DeleteGeneratedImage(_ context.Context, userID, id string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.generatedImages[id]
+	if !ok || v.UserID != userID {
+		return "", ErrNotFound
+	}
+	delete(m.generatedImages, id)
+	return v.FileName, nil
+}
+
+func (m *MemoryRepo) DeleteAllGeneratedImages(_ context.Context, userID string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	names := []string{}
+	for id, v := range m.generatedImages {
+		if v.UserID == userID {
+			names = append(names, v.FileName)
+			delete(m.generatedImages, id)
+		}
+	}
+	return names, nil
 }

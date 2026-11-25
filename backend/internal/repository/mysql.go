@@ -564,3 +564,73 @@ func (r *MySQLRepo) DeleteMemory(ctx context.Context, userID, id string) error {
 	}
 	return nil
 }
+
+func (r *MySQLRepo) CreateGeneratedImage(ctx context.Context, img *GeneratedImage) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO generated_images (id, user_id, file_name, prompt, model, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		img.ID, img.UserID, img.FileName, img.Prompt, img.Model, img.CreatedAt)
+	return err
+}
+
+func (r *MySQLRepo) ListGeneratedImages(ctx context.Context, userID string, limit, offset int) ([]GeneratedImage, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT id, user_id, file_name, prompt, model, created_at FROM generated_images WHERE user_id = ? ORDER BY created_at DESC, id LIMIT ? OFFSET ?`, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []GeneratedImage{}
+	for rows.Next() {
+		var v GeneratedImage
+		if err := rows.Scan(&v.ID, &v.UserID, &v.FileName, &v.Prompt, &v.Model, &v.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (r *MySQLRepo) DeleteGeneratedImage(ctx context.Context, userID, id string) (string, error) {
+	var name string
+	if err := r.db.QueryRowContext(ctx, `SELECT file_name FROM generated_images WHERE id = ? AND user_id = ?`, id, userID).Scan(&name); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	res, err := r.db.ExecContext(ctx, `DELETE FROM generated_images WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return "", err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return "", ErrNotFound
+	}
+	return name, nil
+}
+
+func (r *MySQLRepo) DeleteAllGeneratedImages(ctx context.Context, userID string) ([]string, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT file_name FROM generated_images WHERE user_id = ? FOR UPDATE`, userID)
+	if err != nil {
+		return nil, err
+	}
+	names := []string{}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		names = append(names, n)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM generated_images WHERE user_id = ?`, userID); err != nil {
+		return nil, err
+	}
+	return names, tx.Commit()
+}

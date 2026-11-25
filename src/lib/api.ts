@@ -418,13 +418,13 @@ export type ImageGenParams = {
   watermark: boolean;
   promptExtend: boolean;
 };
-export type GeneratedImage = { name: string; url: string };
+export type GalleryImage = { id: string; name: string; url: string; prompt: string; model: string; createdAt: string };
 
 export async function apiImageGenConfig(): Promise<ImageGenConfig> {
   return request<ImageGenConfig>("/api/v1/images/config");
 }
 
-export async function apiGenerateImages(params: ImageGenParams, references: File[] = [], signal?: AbortSignal): Promise<GeneratedImage[]> {
+export async function apiGenerateImages(params: ImageGenParams, references: File[] = [], signal?: AbortSignal): Promise<GalleryImage[]> {
   let body: BodyInit;
   if (references.length > 0) {
     // Reference images travel as multipart: "params" is the JSON options, each "image" part is one reference.
@@ -435,6 +435,20 @@ export async function apiGenerateImages(params: ImageGenParams, references: File
   } else {
     body = JSON.stringify(params);
   }
-  const res = await request<{ images: GeneratedImage[] }>("/api/v1/images/generate", { method: "POST", body, signal });
+  const res = await request<{ images: GalleryImage[] }>("/api/v1/images/generate", { method: "POST", body, signal });
   return res.images;
+}
+
+export async function apiListImages(limit = 48, offset = 0): Promise<GalleryImage[]> {
+  const res = await request<{ images: GalleryImage[] }>(`/api/v1/images?limit=${limit}&offset=${offset}`);
+  return res.images;
+}
+
+export async function apiDeleteImage(id: string): Promise<void> {
+  await request<{ message: string }>(`/api/v1/images/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function apiDeleteAllImages(): Promise<number> {
+  const res = await request<{ deleted: number }>("/api/v1/images", { method: "DELETE" });
+  return res.deleted;
 }

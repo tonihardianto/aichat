@@ -115,3 +115,14 @@ CREATE TABLE IF NOT EXISTS memories (
     KEY idx_memories_user (user_id, created_at),
     CONSTRAINT fk_memories_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS generated_images (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL,
+    file_name VARCHAR(64) NOT NULL,
+    prompt TEXT NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    created_at DATETIME(6) NOT NULL,
+    KEY idx_generated_images_user (user_id, created_at),
+    CONSTRAINT fk_generated_images_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

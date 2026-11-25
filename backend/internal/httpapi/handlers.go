@@ -335,7 +335,7 @@ func (h *Handlers) HandleImageGenerate(w http.ResponseWriter, r *http.Request) {
 		observability.WriteError(w, http.StatusBadRequest, "invalid_request", "Format request tidak valid")
 		return
 	}
-	names, err := h.chatService.GenerateImages(r.Context(), user.ID, req, refs)
+	images, err := h.chatService.GenerateImages(r.Context(), user.ID, req, refs)
 	if err != nil {
 		var reqErr *chat.ImageRequestError
 		switch {
@@ -351,11 +351,68 @@ func (h *Handlers) HandleImageGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	images := make([]map[string]string, 0, len(names))
-	for _, n := range names {
-		images = append(images, map[string]string{"name": n, "url": "/api/v1/generated/" + n})
+	observability.WriteJSON(w, http.StatusOK, map[string]any{"images": galleryJSON(images)})
+}
+
+func galleryJSON(images []repository.GeneratedImage) []map[string]any {
+	out := make([]map[string]any, 0, len(images))
+	for _, img := range images {
+		out = append(out, map[string]any{
+			"id": img.ID, "name": img.FileName, "url": "/api/v1/generated/" + img.FileName,
+			"prompt": img.Prompt, "model": img.Model, "createdAt": img.CreatedAt,
+		})
 	}
-	observability.WriteJSON(w, http.StatusOK, map[string]any{"images": images})
+	return out
+}
+
+func (h *Handlers) HandleListImages(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		observability.WriteError(w, http.StatusUnauthorized, "unauthorized", "Autentikasi diperlukan")
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	images, err := h.chatService.ListGalleryImages(r.Context(), user.ID, limit, offset)
+	if err != nil {
+		h.logger.Error("list_images_failed", "error", err.Error())
+		observability.WriteError(w, http.StatusInternalServerError, "list_failed", "Gagal memuat galeri")
+		return
+	}
+	observability.WriteJSON(w, http.StatusOK, map[string]any{"images": galleryJSON(images)})
+}
+
+func (h *Handlers) HandleDeleteImage(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		observability.WriteError(w, http.StatusUnauthorized, "unauthorized", "Autentikasi diperlukan")
+		return
+	}
+	if err := h.chatService.DeleteGalleryImage(r.Context(), user.ID, r.PathValue("id")); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			observability.WriteError(w, http.StatusNotFound, "not_found", "Gambar tidak ditemukan")
+			return
+		}
+		h.logger.Error("delete_image_failed", "error", err.Error())
+		observability.WriteError(w, http.StatusInternalServerError, "delete_failed", "Gagal menghapus gambar")
+		return
+	}
+	observability.WriteJSON(w, http.StatusOK, map[string]string{"message": "dihapus"})
+}
+
+func (h *Handlers) HandleDeleteAllImages(w http.ResponseWriter, r *http.Request) {
+	user := auth.GetUser(r.Context())
+	if user == nil {
+		observability.WriteError(w, http.StatusUnauthorized, "unauthorized", "Autentikasi diperlukan")
+		return
+	}
+	n, err := h.chatService.DeleteAllGalleryImages(r.Context(), user.ID)
+	if err != nil {
+		h.logger.Error("delete_all_images_failed", "error", err.Error())
+		observability.WriteError(w, http.StatusInternalServerError, "delete_failed", "Gagal menghapus gambar")
+		return
+	}
+	observability.WriteJSON(w, http.StatusOK, map[string]int{"deleted": n})
 }
 
 func (h *Handlers) HandleGetGeneratedImage(w http.ResponseWriter, r *http.Request) {

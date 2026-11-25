@@ -2,16 +2,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ImagePlus, ImageIcon, Loader2, Sparkles, Trash2, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatImage } from "@/components/chat/ChatImage";
-import { ApiError, apiGenerateImages, apiImageGenConfig, type ImageGenConfig, type ImageGenParams } from "@/lib/api";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  ApiError, apiDeleteAllImages, apiDeleteImage, apiGenerateImages, apiImageGenConfig, apiListImages,
+  type GalleryImage, type ImageGenConfig, type ImageGenParams,
+} from "@/lib/api";
 
-type HistoryItem = { url: string; prompt: string; model: string; createdAt: number };
 type Settings = Omit<ImageGenParams, "prompt">;
 type Reference = { id: string; file: File; preview: string };
 
 const MAX_PROMPT = 4000;
 const MAX_REF_BYTES = 10 * 1024 * 1024;
 const REF_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const MAX_HISTORY = 24;
+const GALLERY_PAGE = 48;
 const DEFAULT_SETTINGS: Settings = {
   model: "",
   n: 1,
@@ -70,13 +77,16 @@ function Select({ value, onChange, options, disabled }: { value: string; onChang
 
 export function ImageGenerator({ userId }: { userId: string }) {
   const settingsKey = `ai-chat-image-settings:${userId}`;
-  const historyKey = `ai-chat-image-history:${userId}`;
 
   const [config, setConfig] = useState<ImageGenConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULT_SETTINGS, ...load<Partial<Settings>>(settingsKey, {}) }));
-  const [history, setHistory] = useState<HistoryItem[]>(() => load<HistoryItem[]>(historyKey, []));
+  const [gallery, setGallery] = useState<GalleryImage[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState(true);
+  const [galleryError, setGalleryError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +108,48 @@ export function ImageGenerator({ userId }: { userId: string }) {
   }, []);
 
   useEffect(() => save(settingsKey, settings), [settings, settingsKey]);
-  useEffect(() => save(historyKey, history), [history, historyKey]);
+  useEffect(() => {
+    // The gallery lives on the server now; drop the old per-browser list.
+    try { localStorage.removeItem(`ai-chat-image-history:${userId}`); } catch { /* ignore */ }
+    apiListImages(GALLERY_PAGE, 0)
+      .then((items) => { setGallery(items); setHasMore(items.length === GALLERY_PAGE); })
+      .catch(() => setGalleryError("Gagal memuat galeri gambar."))
+      .finally(() => setGalleryLoading(false));
+  }, [userId]);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const items = await apiListImages(GALLERY_PAGE, gallery.length);
+      setGallery((current) => [...current, ...items.filter((i) => !current.some((c) => c.id === i.id))]);
+      setHasMore(items.length === GALLERY_PAGE);
+    } catch {
+      setGalleryError("Gagal memuat gambar berikutnya.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const removeImage = async (id: string) => {
+    try {
+      await apiDeleteImage(id);
+      setGallery((current) => current.filter((i) => i.id !== id));
+      setGalleryError(null);
+    } catch (e) {
+      setGalleryError(e instanceof Error ? e.message : "Gagal menghapus gambar.");
+    }
+  };
+
+  const removeAll = async () => {
+    try {
+      await apiDeleteAllImages();
+      setGallery([]);
+      setHasMore(false);
+      setGalleryError(null);
+    } catch (e) {
+      setGalleryError(e instanceof Error ? e.message : "Gagal menghapus gambar.");
+    }
+  };
   useEffect(() => () => {
     abortRef.current?.abort();
     refsRef.current.forEach((r) => URL.revokeObjectURL(r.preview));
@@ -146,8 +197,7 @@ export function ImageGenerator({ userId }: { userId: string }) {
     abortRef.current = controller;
     try {
       const images = await apiGenerateImages({ ...settings, prompt: text }, refs.map((r) => r.file), controller.signal);
-      const now = Date.now();
-      setHistory((h) => [...images.map((i) => ({ url: i.url, prompt: text, model: settings.model, createdAt: now })), ...h].slice(0, MAX_HISTORY));
+      setGallery((current) => [...images, ...current.filter((c) => !images.some((i) => i.id === c.id))]);
     } catch (e) {
       if (controller.signal.aborted) return;
       setError(e instanceof ApiError || e instanceof Error ? e.message : "Gagal membuat gambar.");
@@ -273,9 +323,23 @@ export function ImageGenerator({ userId }: { userId: string }) {
 
         <section aria-label="Hasil gambar" className="min-w-0">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Hasil{history.length > 0 && <span className="ml-2 text-xs font-normal text-muted-foreground">{history.length} gambar terakhir</span>}</h2>
-            {history.length > 0 && !generating && (
-              <Button type="button" variant="ghost" size="sm" className="gap-1.5 text-xs" onClick={() => setHistory([])}><Trash2 className="size-3.5" />Bersihkan daftar</Button>
+            <h2 className="text-sm font-semibold">Galeri{gallery.length > 0 && <span className="ml-2 text-xs font-normal text-muted-foreground">{gallery.length}{hasMore ? "+" : ""} gambar</span>}</h2>
+            {gallery.length > 0 && !generating && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button type="button" variant="ghost" size="sm" className="gap-1.5 text-xs"><Trash2 className="size-3.5" />Hapus semua</Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Hapus semua gambar?</AlertDialogTitle>
+                    <AlertDialogDescription>Semua gambar di galeri Anda dihapus permanen dari server dan tidak bisa dikembalikan.</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Batal</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void removeAll()}>Hapus semua</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </div>
 
@@ -289,22 +353,51 @@ export function ImageGenerator({ userId }: { userId: string }) {
             </div>
           )}
 
-          {history.length === 0 && !generating ? (
+          {galleryError && <p role="alert" className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{galleryError}</p>}
+
+          {galleryLoading ? (
+            <div role="status" className="flex min-h-40 items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-2 size-4 animate-spin" />Memuat galeri…</div>
+          ) : gallery.length === 0 && !generating ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-2 rounded-xl border border-dashed text-center text-sm text-muted-foreground">
               <ImageIcon className="size-8 opacity-50" />
               <p>Gambar yang Anda buat akan muncul di sini.</p>
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
-              {history.map((item) => (
-                <figure key={item.url} className="min-w-0 space-y-1.5">
+              {gallery.map((item) => (
+                <figure key={item.id} className="min-w-0 space-y-1.5">
                   <ChatImage src={item.url} alt={item.prompt} className="max-h-[28rem]" />
                   <figcaption className="flex items-start justify-between gap-2 text-xs text-muted-foreground">
                     <span className="line-clamp-2" title={item.prompt}>{item.prompt}</span>
-                    <button type="button" className="shrink-0 underline underline-offset-2 hover:text-foreground" onClick={() => setPrompt(item.prompt)}>Pakai prompt</button>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <button type="button" className="underline underline-offset-2 hover:text-foreground" onClick={() => setPrompt(item.prompt)}>Pakai prompt</button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button type="button" aria-label="Hapus gambar" title="Hapus gambar" className="rounded p-0.5 hover:text-destructive"><Trash2 className="size-3.5" /></button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Hapus gambar ini?</AlertDialogTitle>
+                            <AlertDialogDescription>Gambar dihapus permanen dari server dan tidak bisa dikembalikan.</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Batal</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => void removeImage(item.id)}>Hapus</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </span>
                   </figcaption>
                 </figure>
               ))}
+            </div>
+          )}
+
+          {hasMore && !galleryLoading && (
+            <div className="mt-4 flex justify-center">
+              <Button type="button" variant="outline" size="sm" disabled={loadingMore} onClick={() => void loadMore()}>
+                {loadingMore ? <Loader2 className="animate-spin" /> : null}Muat lebih banyak
+              </Button>
             </div>
           )}
         </section>
