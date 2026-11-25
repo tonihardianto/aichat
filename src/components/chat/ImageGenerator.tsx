@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ImageIcon, Loader2, Sparkles, Trash2, Wand2, X } from "lucide-react";
+import { ImagePlus, ImageIcon, Loader2, Sparkles, Trash2, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatImage } from "@/components/chat/ChatImage";
 import { ApiError, apiGenerateImages, apiImageGenConfig, type ImageGenConfig, type ImageGenParams } from "@/lib/api";
 
 type HistoryItem = { url: string; prompt: string; model: string; createdAt: number };
 type Settings = Omit<ImageGenParams, "prompt">;
+type Reference = { id: string; file: File; preview: string };
 
 const MAX_PROMPT = 4000;
+const MAX_REF_BYTES = 10 * 1024 * 1024;
+const REF_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_HISTORY = 24;
 const DEFAULT_SETTINGS: Settings = {
   model: "",
@@ -78,6 +81,12 @@ export function ImageGenerator({ userId }: { userId: string }) {
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [refs, setRefs] = useState<Reference[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const refsRef = useRef<Reference[]>([]);
+  refsRef.current = refs;
+  const maxRefs = config?.maxReferences ?? 4;
 
   useEffect(() => {
     apiImageGenConfig()
@@ -90,7 +99,34 @@ export function ImageGenerator({ userId }: { userId: string }) {
 
   useEffect(() => save(settingsKey, settings), [settings, settingsKey]);
   useEffect(() => save(historyKey, history), [history, historyKey]);
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    refsRef.current.forEach((r) => URL.revokeObjectURL(r.preview));
+  }, []);
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const list = Array.from(files);
+    const problems: string[] = [];
+    const accepted: Reference[] = [];
+    for (const file of list) {
+      if (!REF_TYPES.includes(file.type)) problems.push(`${file.name || "gambar"}: harus PNG, JPEG, atau WebP`);
+      else if (file.size > MAX_REF_BYTES) problems.push(`${file.name || "gambar"}: lebih dari 10 MB`);
+      else accepted.push({ id: crypto.randomUUID(), file, preview: URL.createObjectURL(file) });
+    }
+    setRefs((current) => {
+      const room = Math.max(0, maxRefs - current.length);
+      if (accepted.length > room) problems.push(`Maksimal ${maxRefs} gambar referensi`);
+      accepted.slice(room).forEach((r) => URL.revokeObjectURL(r.preview));
+      return [...current, ...accepted.slice(0, room)];
+    });
+    setError(problems.length ? problems.join(". ") : null);
+  }, [maxRefs]);
+
+  const removeRef = (id: string) =>
+    setRefs((current) => {
+      current.filter((r) => r.id === id).forEach((r) => URL.revokeObjectURL(r.preview));
+      return current.filter((r) => r.id !== id);
+    });
 
   useEffect(() => {
     if (!generating) return;
@@ -109,7 +145,7 @@ export function ImageGenerator({ userId }: { userId: string }) {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const images = await apiGenerateImages({ ...settings, prompt: text }, controller.signal);
+      const images = await apiGenerateImages({ ...settings, prompt: text }, refs.map((r) => r.file), controller.signal);
       const now = Date.now();
       setHistory((h) => [...images.map((i) => ({ url: i.url, prompt: text, model: settings.model, createdAt: now })), ...h].slice(0, MAX_HISTORY));
     } catch (e) {
@@ -119,7 +155,7 @@ export function ImageGenerator({ userId }: { userId: string }) {
       setGenerating(false);
       abortRef.current = null;
     }
-  }, [prompt, generating, settings]);
+  }, [prompt, generating, settings, refs]);
 
   const ready = config?.enabled && settings.model;
 
@@ -148,6 +184,10 @@ export function ImageGenerator({ userId }: { userId: string }) {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void generate(); } }}
+              onPaste={(e) => {
+                const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+                if (files.length > 0 && !generating) { e.preventDefault(); addFiles(files); }
+              }}
               maxLength={MAX_PROMPT}
               rows={6}
               placeholder="Contoh: kucing lucu memakai topi, ilustrasi cat air"
@@ -156,6 +196,46 @@ export function ImageGenerator({ userId }: { userId: string }) {
             />
             <span className="block text-right text-[11px] text-muted-foreground">{prompt.length}/{MAX_PROMPT} · Ctrl/⌘ + Enter untuk membuat</span>
           </Field>
+
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Gambar referensi (opsional)</span>
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => { e.preventDefault(); setDragging(false); if (!generating) addFiles(e.dataTransfer.files); }}
+              className={`rounded-lg border border-dashed p-3 transition-colors ${dragging ? "border-primary bg-accent/50" : "bg-background"}`}
+            >
+              {refs.length > 0 && (
+                <ul className="mb-3 flex flex-wrap gap-2">
+                  {refs.map((r) => (
+                    <li key={r.id} className="group relative">
+                      <img src={r.preview} alt={`Referensi ${r.file.name}`} className="size-16 rounded-md border object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => removeRef(r.id)}
+                        disabled={generating}
+                        aria-label={`Hapus referensi ${r.file.name}`}
+                        className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border bg-background text-foreground shadow-sm hover:bg-accent disabled:opacity-50"
+                      ><X className="size-3" /></button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                className="sr-only"
+                tabIndex={-1}
+                onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
+              />
+              <Button type="button" variant="outline" size="sm" className="gap-1.5" disabled={generating || refs.length >= maxRefs} onClick={() => fileInputRef.current?.click()}>
+                <ImagePlus className="size-4" />Pilih gambar
+              </Button>
+              <p className="mt-2 text-[11px] text-muted-foreground">Seret gambar ke sini, atau tempel dengan Ctrl/⌘ + V di kolom deskripsi. Maksimal {maxRefs} gambar, 10 MB per gambar (PNG, JPEG, WebP).</p>
+            </div>
+          </div>
 
           <Field label="Model">
             <select value={settings.model} onChange={(e) => set("model", e.target.value)} disabled={generating || !config?.models.length} className={fieldClass}>
@@ -187,7 +267,7 @@ export function ImageGenerator({ userId }: { userId: string }) {
           {generating ? (
             <Button type="button" variant="outline" className="w-full" onClick={() => abortRef.current?.abort()}><X />Batalkan ({seconds} dtk)</Button>
           ) : (
-            <Button type="submit" className="w-full" disabled={!ready || !prompt.trim()}><Sparkles />Buat gambar</Button>
+            <Button type="submit" className="w-full" disabled={!ready || !prompt.trim()}><Sparkles />{refs.length > 0 ? "Buat dari referensi" : "Buat gambar"}</Button>
           )}
         </form>
 

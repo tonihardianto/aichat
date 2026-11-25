@@ -32,6 +32,7 @@ type ImageAPIRequest struct {
 	OutputFormat string
 	Watermark    bool
 	PromptExtend bool
+	References   [][]byte // optional reference images (PNG/JPEG/WebP bytes)
 }
 
 // ImageAPI talks to an OpenAI-style /images/generations endpoint (JSON or event-stream replies).
@@ -50,16 +51,34 @@ func (a ImageAPI) Generate(ctx context.Context, r ImageAPIRequest) ([][]byte, er
 	ctx, cancel := context.WithTimeout(ctx, imageAPITimeout)
 	defer cancel()
 
-	body, _ := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model": r.Model, "prompt": r.Prompt, "n": r.N, "size": r.Size, "quality": r.Quality,
 		"background": r.Background, "image_detail": "high", "output_format": r.OutputFormat,
 		"watermark": r.Watermark, "prompt_extend": r.PromptExtend,
-	})
+	}
+	if len(r.References) > 0 {
+		// This provider takes reference images as data URLs in "images" (verified against the live API).
+		refs := make([]string, 0, len(r.References))
+		for _, data := range r.References {
+			ct := http.DetectContentType(data)
+			if !strings.HasPrefix(ct, "image/") {
+				return nil, errors.New("gambar referensi harus PNG, JPEG, atau WebP")
+			}
+			refs = append(refs, "data:"+ct+";base64,"+base64.StdEncoding.EncodeToString(data))
+		}
+		payload["images"] = refs
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.URL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	return a.do(ctx, req)
+}
+
+// do adds auth, sends the request and decodes the (JSON or event-stream) reply into image bytes.
+func (a ImageAPI) do(ctx context.Context, req *http.Request) ([][]byte, error) {
 	req.Header.Set("Accept", "text/event-stream, application/json")
 	if a.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+a.APIKey)

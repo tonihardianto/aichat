@@ -406,7 +406,7 @@ export async function apiCancelMessage(conversationId: string, messageId: string
 export async function apiListMemories(): Promise<ApiMemory[]> { return request<ApiMemory[]>("/api/v1/memories"); }
 export async function apiDeleteMemory(id: string): Promise<void> { await request<void>(`/api/v1/memories/${id}`, { method: "DELETE" }); }
 
-export type ImageGenConfig = { enabled: boolean; models: string[] };
+export type ImageGenConfig = { enabled: boolean; models: string[]; maxReferences: number };
 export type ImageGenParams = {
   model: string;
   prompt: string;
@@ -424,11 +424,17 @@ export async function apiImageGenConfig(): Promise<ImageGenConfig> {
   return request<ImageGenConfig>("/api/v1/images/config");
 }
 
-export async function apiGenerateImages(params: ImageGenParams, signal?: AbortSignal): Promise<GeneratedImage[]> {
-  const res = await request<{ images: GeneratedImage[] }>("/api/v1/images/generate", {
-    method: "POST",
-    body: JSON.stringify(params),
-    signal,
-  });
+export async function apiGenerateImages(params: ImageGenParams, references: File[] = [], signal?: AbortSignal): Promise<GeneratedImage[]> {
+  let body: BodyInit;
+  if (references.length > 0) {
+    // Reference images travel as multipart: "params" is the JSON options, each "image" part is one reference.
+    const form = new FormData();
+    form.append("params", JSON.stringify(params));
+    references.forEach((file) => form.append("image", file));
+    body = form;
+  } else {
+    body = JSON.stringify(params);
+  }
+  const res = await request<{ images: GeneratedImage[] }>("/api/v1/images/generate", { method: "POST", body, signal });
   return res.images;
 }

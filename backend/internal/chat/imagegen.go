@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"slices"
 	"strings"
@@ -34,9 +35,45 @@ type ImageGenRequest struct {
 	PromptExtend bool   `json:"promptExtend"`
 }
 
-// ImageGenEnabled reports whether the external image API is configured, with the models users may pick.
-func (s *Service) ImageGenConfig() (bool, []string) {
-	return s.cfg.ImageAPIURL != "" && s.cfg.ImageAPIKey != "", s.cfg.ImageModels
+const (
+	MaxImageReferences    = 4
+	maxImageReferenceSize = 10 << 20
+)
+
+var ErrImageReference = &ImageRequestError{"Gambar referensi harus PNG, JPEG, atau WebP, maksimal 10 MB per gambar"}
+
+type ImageGenConfig struct {
+	Enabled       bool     `json:"enabled"`
+	Models        []string `json:"models"`
+	MaxReferences int      `json:"maxReferences"`
+}
+
+// ImageGenConfig reports whether the external image API is configured, with the models users may pick.
+func (s *Service) ImageGenConfig() ImageGenConfig {
+	models := s.cfg.ImageModels
+	if models == nil {
+		models = []string{}
+	}
+	return ImageGenConfig{
+		Enabled:       s.cfg.ImageAPIURL != "" && s.cfg.ImageAPIKey != "",
+		Models:        models,
+		MaxReferences: MaxImageReferences,
+	}
+}
+
+func validateImageReferences(refs [][]byte) error {
+	if len(refs) > MaxImageReferences {
+		return &ImageRequestError{fmt.Sprintf("Maksimal %d gambar referensi", MaxImageReferences)}
+	}
+	for _, data := range refs {
+		if len(data) == 0 || len(data) > maxImageReferenceSize {
+			return ErrImageReference
+		}
+		if !oneOf(http.DetectContentType(data), "image/png", "image/jpeg", "image/webp") {
+			return ErrImageReference
+		}
+	}
+	return nil
 }
 
 func oneOf(v string, allowed ...string) bool { return slices.Contains(allowed, v) }
@@ -86,18 +123,23 @@ func (s *Service) validateImageRequest(r *ImageGenRequest) error {
 }
 
 // GenerateImages calls the external image API and stores the results for the user. It returns the file names.
-func (s *Service) GenerateImages(ctx context.Context, userID string, r ImageGenRequest) ([]string, error) {
-	if enabled, _ := s.ImageGenConfig(); !enabled {
+// refs are optional reference images sent along with the prompt.
+func (s *Service) GenerateImages(ctx context.Context, userID string, r ImageGenRequest, refs [][]byte) ([]string, error) {
+	if !s.ImageGenConfig().Enabled {
 		return nil, ErrImageGenDisabled
 	}
 	if err := s.validateImageRequest(&r); err != nil {
 		return nil, err
 	}
+	if err := validateImageReferences(refs); err != nil {
+		return nil, err
+	}
 	api := tooling.ImageAPI{URL: s.cfg.ImageAPIURL, APIKey: s.cfg.ImageAPIKey}
-	images, err := api.Generate(ctx, tooling.ImageAPIRequest{
+	apiReq := tooling.ImageAPIRequest{
 		Model: r.Model, Prompt: r.Prompt, N: r.N, Size: r.Size, Quality: r.Quality, Background: r.Background,
-		OutputFormat: r.OutputFormat, Watermark: r.Watermark, PromptExtend: r.PromptExtend,
-	})
+		OutputFormat: r.OutputFormat, Watermark: r.Watermark, PromptExtend: r.PromptExtend, References: refs,
+	}
+	images, err := api.Generate(ctx, apiReq)
 	if err != nil {
 		return nil, err
 	}

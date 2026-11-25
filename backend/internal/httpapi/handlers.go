@@ -298,11 +298,7 @@ func (h *Handlers) HandleGetAttachmentContent(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handlers) HandleImageGenConfig(w http.ResponseWriter, r *http.Request) {
-	enabled, models := h.chatService.ImageGenConfig()
-	if models == nil {
-		models = []string{}
-	}
-	observability.WriteJSON(w, http.StatusOK, map[string]any{"enabled": enabled, "models": models})
+	observability.WriteJSON(w, http.StatusOK, h.chatService.ImageGenConfig())
 }
 
 func (h *Handlers) HandleImageGenerate(w http.ResponseWriter, r *http.Request) {
@@ -312,11 +308,34 @@ func (h *Handlers) HandleImageGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req chat.ImageGenRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
+	var refs [][]byte
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		// Reference images: "params" holds the JSON options, each "image" part is one reference.
+		r.Body = http.MaxBytesReader(w, r.Body, int64(chat.MaxImageReferences+1)*(10<<20)+(1<<20))
+		if err := r.ParseMultipartForm(8 << 20); err != nil || json.Unmarshal([]byte(r.FormValue("params")), &req) != nil {
+			observability.WriteError(w, http.StatusBadRequest, "invalid_request", "Format request tidak valid atau gambar terlalu besar")
+			return
+		}
+		defer r.MultipartForm.RemoveAll()
+		for _, fh := range r.MultipartForm.File["image"] {
+			f, err := fh.Open()
+			if err != nil {
+				observability.WriteError(w, http.StatusBadRequest, "invalid_request", "Gambar referensi tidak bisa dibaca")
+				return
+			}
+			data, err := io.ReadAll(io.LimitReader(f, 10<<20+1))
+			f.Close()
+			if err != nil {
+				observability.WriteError(w, http.StatusBadRequest, "invalid_request", "Gambar referensi tidak bisa dibaca")
+				return
+			}
+			refs = append(refs, data)
+		}
+	} else if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
 		observability.WriteError(w, http.StatusBadRequest, "invalid_request", "Format request tidak valid")
 		return
 	}
-	names, err := h.chatService.GenerateImages(r.Context(), user.ID, req)
+	names, err := h.chatService.GenerateImages(r.Context(), user.ID, req, refs)
 	if err != nil {
 		var reqErr *chat.ImageRequestError
 		switch {
