@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -163,6 +162,14 @@ type openAIChatChunk struct {
 			// tokens count toward completion_tokens, so they must count for timing.
 			Reasoning        string `json:"reasoning"`
 			ReasoningContent string `json:"reasoning_content"`
+			ToolCalls        []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -172,76 +179,16 @@ type openAIChatChunk struct {
 	} `json:"usage"`
 }
 
-type openAICompletionResponse struct {
-	Choices []struct {
-		Message openAIMessage `json:"message"`
-	} `json:"choices"`
-}
+// maxToolRounds bounds how many times the model may call tools before it must answer.
+const maxToolRounds = 4
 
+// StreamWithTools streams the answer in a single request that also carries the tool definitions: text reaches the
+// caller as it is generated, and only when the model asks for tools are they executed and another round started.
 func (p *OpenAIProvider) StreamWithTools(ctx context.Context, model string, messages []ChatMessage, maxTokens int, think bool, tools []FunctionTool, execute ToolExecutor) (<-chan StreamChunk, error) {
-	if len(tools) == 0 {
+	if len(tools) == 0 || execute == nil {
 		return p.Stream(ctx, model, messages, maxTokens, think)
 	}
-	requestMessages := p.requestMessages(messages)
-	for range 4 {
-		toolDefs := make([]struct {
-			Type     string       `json:"type"`
-			Function FunctionTool `json:"function"`
-		}, len(tools))
-		for i, tool := range tools {
-			toolDefs[i] = struct {
-				Type     string       `json:"type"`
-				Function FunctionTool `json:"function"`
-			}{Type: "function", Function: tool}
-		}
-		toolReq := openAIChatRequest{Model: model, Messages: requestMessages, Think: think, MaxTokens: maxTokens, Tools: toolDefs}
-		if !think {
-			toolReq.ReasoningEffort = "none"
-		}
-		reqBody, err := json.Marshal(toolReq)
-		if err != nil {
-			return nil, err
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/chat/completions", p.baseURL), bytes.NewReader(reqBody))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if p.apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+p.apiKey)
-		}
-		resp, err := p.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("failed to call tools: %w", err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			data, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			return nil, fmt.Errorf("tools returned status %d: %s", resp.StatusCode, data)
-		}
-		var parsed openAICompletionResponse
-		err = json.NewDecoder(resp.Body).Decode(&parsed)
-		resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-		if len(parsed.Choices) == 0 {
-			return nil, errors.New("tools returned no choices")
-		}
-		assistant := parsed.Choices[0].Message
-		if len(assistant.ToolCalls) == 0 {
-			break
-		}
-		requestMessages = append(requestMessages, assistant)
-		for _, call := range assistant.ToolCalls {
-			result, err := execute(ctx, call.Function.Name, json.RawMessage(call.Function.Arguments))
-			if err != nil {
-				result = "Tool error: " + err.Error()
-			}
-			requestMessages = append(requestMessages, openAIMessage{Role: "tool", ToolCallID: call.ID, Content: result})
-		}
-	}
-	return p.streamOpenAIMessages(ctx, model, requestMessages, maxTokens, think)
+	return p.streamRounds(ctx, model, p.requestMessages(messages), maxTokens, think, tools, execute)
 }
 
 func (p *OpenAIProvider) requestMessages(messages []ChatMessage) []openAIMessage {
@@ -270,8 +217,11 @@ func (p *OpenAIProvider) Stream(ctx context.Context, model string, messages []Ch
 }
 
 func (p *OpenAIProvider) streamOpenAIMessages(ctx context.Context, model string, reqMessages []openAIMessage, maxTokens int, think bool) (<-chan StreamChunk, error) {
-	out := make(chan StreamChunk, 32)
+	return p.streamRounds(ctx, model, reqMessages, maxTokens, think, nil, nil)
+}
 
+// openRound sends one streaming chat completion request. tools may be nil.
+func (p *OpenAIProvider) openRound(ctx context.Context, model string, reqMessages []openAIMessage, maxTokens int, think bool, tools []FunctionTool) (*http.Response, error) {
 	chatReq := openAIChatRequest{
 		Model:         model,
 		Messages:      reqMessages,
@@ -280,18 +230,20 @@ func (p *OpenAIProvider) streamOpenAIMessages(ctx context.Context, model string,
 		MaxTokens:     maxTokens,
 		StreamOptions: &openAIStreamOptions{IncludeUsage: true},
 	}
-
 	if !think {
 		chatReq.ReasoningEffort = "none"
 	}
-
+	for _, tool := range tools {
+		chatReq.Tools = append(chatReq.Tools, struct {
+			Type     string       `json:"type"`
+			Function FunctionTool `json:"function"`
+		}{Type: "function", Function: tool})
+	}
 	reqBody, err := json.Marshal(chatReq)
 	if err != nil {
 		return nil, err
 	}
-
-	reqURL := fmt.Sprintf("%s/chat/completions", p.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/chat/completions", p.baseURL), bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, err
 	}
@@ -300,113 +252,191 @@ func (p *OpenAIProvider) streamOpenAIMessages(ctx context.Context, model string,
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
-
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call chat completions: %w", err)
 	}
-
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("chat completions returned status %d: %s", resp.StatusCode, string(body))
 	}
+	return resp, nil
+}
+
+// roundResult is what one streamed completion produced.
+type roundResult struct {
+	content      string
+	toolCalls    []openAIToolCall
+	finishReason string
+	inputTokens  int
+	usageTokens  int // authoritative completion_tokens reported by the server
+	deltaCount   int // fallback estimate: number of streamed chunks
+	firstToken   time.Time
+}
+
+// readRound forwards text and reasoning to out while it arrives and collects tool calls. It always closes resp.Body.
+func readRound(ctx context.Context, resp *http.Response, out chan<- StreamChunk) (roundResult, error) {
+	defer resp.Body.Close()
+	var res roundResult
+	var content strings.Builder
+	calls := map[int]*openAIToolCall{}
+	var order []int
+
+	scanner := bufio.NewScanner(resp.Body)
+	// Set scan buffer to support large tokens/lines
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return res, ctx.Err()
+		default:
+		}
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			break
+		}
+		var chunk openAIChatChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+		if chunk.Usage != nil {
+			res.inputTokens = chunk.Usage.PromptTokens
+			res.usageTokens = chunk.Usage.CompletionTokens
+		}
+		for _, choice := range chunk.Choices {
+			d := choice.Delta
+			if res.firstToken.IsZero() && (d.Content != "" || d.Reasoning != "" || d.ReasoningContent != "") {
+				res.firstToken = time.Now()
+			}
+			if r := d.Reasoning + d.ReasoningContent; r != "" {
+				res.deltaCount++ // fallback estimate must include reasoning tokens too
+				out <- StreamChunk{Reasoning: r}
+			}
+			if d.Content != "" {
+				res.deltaCount++
+				content.WriteString(d.Content)
+				out <- StreamChunk{Delta: d.Content}
+			}
+			for _, tc := range d.ToolCalls {
+				c, ok := calls[tc.Index]
+				if !ok {
+					c = &openAIToolCall{Type: "function"}
+					calls[tc.Index] = c
+					order = append(order, tc.Index)
+				}
+				if tc.ID != "" {
+					c.ID = tc.ID
+				}
+				// Servers either send a whole call at once or fragment name/arguments across chunks.
+				c.Function.Name += tc.Function.Name
+				c.Function.Arguments += tc.Function.Arguments
+			}
+			if choice.FinishReason != nil && *choice.FinishReason != "" {
+				res.finishReason = *choice.FinishReason
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return res, err
+	}
+	res.content = content.String()
+	for _, i := range order {
+		c := calls[i]
+		if c.Function.Name == "" {
+			continue
+		}
+		if c.ID == "" {
+			c.ID = fmt.Sprintf("call_%d", i)
+		}
+		if c.Function.Arguments == "" {
+			c.Function.Arguments = "{}"
+		}
+		res.toolCalls = append(res.toolCalls, *c)
+	}
+	return res, nil
+}
+
+// streamRounds streams a completion. With tools, a round that ends in tool calls is followed by the tool results and
+// another round, so the user sees text as soon as the model writes it and nothing is generated twice.
+func (p *OpenAIProvider) streamRounds(ctx context.Context, model string, reqMessages []openAIMessage, maxTokens int, think bool, tools []FunctionTool, execute ToolExecutor) (<-chan StreamChunk, error) {
+	resp, err := p.openRound(ctx, model, reqMessages, maxTokens, think, tools)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan StreamChunk, 32)
 
 	go func() {
-		defer resp.Body.Close()
 		defer close(out)
-
-		scanner := bufio.NewScanner(resp.Body)
-		// Set scan buffer to support large tokens/lines
-		buf := make([]byte, 64*1024)
-		scanner.Buffer(buf, 1024*1024)
-
-		var firstTokenTime time.Time
-		deltaCount := 0 // fallback estimate: number of streamed content chunks
-		inputTokens := 0
-		usageTokens := 0 // authoritative completion_tokens reported by the server
-		finishReason := ""
-
-		// finish emits the terminal chunk. It runs after the stream ends so the
-		// trailing usage chunk (sent after finish_reason) is included.
-		finish := func() {
-			if finishReason == "" {
-				finishReason = "stop"
-			}
-			outputTokens := usageTokens
-			if outputTokens == 0 {
-				outputTokens = deltaCount
-			}
-			tokensPerSec := 0.0
-			if !firstTokenTime.IsZero() && outputTokens > 0 {
-				if d := time.Since(firstTokenTime).Seconds(); d > 0 {
-					tokensPerSec = float64(outputTokens) / d
-				}
-			}
-			out <- StreamChunk{
-				FinishReason: finishReason,
-				InputTokens:  inputTokens,
-				OutputTokens: outputTokens,
-				TokensPerSec: tokensPerSec,
-			}
-		}
-
-		for scanner.Scan() {
-			select {
-			case <-ctx.Done():
-				out <- StreamChunk{Error: ctx.Err()}
+		var (
+			total      roundResult // totals across rounds
+			firstToken time.Time
+			messages   = reqMessages
+		)
+		for round := 0; ; round++ {
+			res, err := readRound(ctx, resp, out)
+			if err != nil {
+				out <- StreamChunk{Error: err}
 				return
-			default:
 			}
-
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" || !strings.HasPrefix(line, "data:") {
-				continue
+			if firstToken.IsZero() {
+				firstToken = res.firstToken
 			}
+			total.inputTokens = res.inputTokens
+			total.usageTokens += res.usageTokens
+			total.deltaCount += res.deltaCount
+			total.finishReason = res.finishReason
 
-			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if data == "[DONE]" {
-				finish()
+			if len(res.toolCalls) == 0 || execute == nil || round >= maxToolRounds {
+				p.finishStream(out, total, firstToken)
 				return
 			}
 
-			var chunk openAIChatChunk
-			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				continue
+			messages = append(messages, openAIMessage{Role: "assistant", Content: res.content, ToolCalls: res.toolCalls})
+			for _, call := range res.toolCalls {
+				result, err := execute(ctx, call.Function.Name, json.RawMessage(call.Function.Arguments))
+				if err != nil {
+					result = "Tool error: " + err.Error()
+				}
+				messages = append(messages, openAIMessage{Role: "tool", ToolCallID: call.ID, Content: result})
 			}
-
-			if chunk.Usage != nil {
-				inputTokens = chunk.Usage.PromptTokens
-				usageTokens = chunk.Usage.CompletionTokens
+			// After the last allowed round the model must answer without tools.
+			roundTools := tools
+			if round+1 >= maxToolRounds {
+				roundTools = nil
 			}
-
-			for _, choice := range chunk.Choices {
-				if firstTokenTime.IsZero() && (choice.Delta.Content != "" || choice.Delta.Reasoning != "" || choice.Delta.ReasoningContent != "") {
-					firstTokenTime = time.Now()
-				}
-				if r := choice.Delta.Reasoning + choice.Delta.ReasoningContent; r != "" {
-					deltaCount++ // fallback estimate must include reasoning tokens too
-					out <- StreamChunk{Reasoning: r}
-				}
-				if delta := choice.Delta.Content; delta != "" {
-					deltaCount++
-					out <- StreamChunk{Delta: delta}
-				}
-				if choice.FinishReason != nil && *choice.FinishReason != "" {
-					finishReason = *choice.FinishReason
-				}
+			resp, err = p.openRound(ctx, model, messages, maxTokens, think, roundTools)
+			if err != nil {
+				out <- StreamChunk{Error: err}
+				return
 			}
 		}
-
-		if err := scanner.Err(); err != nil {
-			out <- StreamChunk{Error: err}
-			return
-		}
-		// Stream closed without [DONE]
-		finish()
 	}()
 
 	return out, nil
+}
+
+// finishStream emits the terminal chunk with token counts and speed.
+func (p *OpenAIProvider) finishStream(out chan<- StreamChunk, total roundResult, firstToken time.Time) {
+	reason := total.finishReason
+	if reason == "" || reason == "tool_calls" {
+		reason = "stop"
+	}
+	outputTokens := total.usageTokens
+	if outputTokens == 0 {
+		outputTokens = total.deltaCount
+	}
+	tokensPerSec := 0.0
+	if !firstToken.IsZero() && outputTokens > 0 {
+		if d := time.Since(firstToken).Seconds(); d > 0 {
+			tokensPerSec = float64(outputTokens) / d
+		}
+	}
+	out <- StreamChunk{FinishReason: reason, InputTokens: total.inputTokens, OutputTokens: outputTokens, TokensPerSec: tokensPerSec}
 }
 
 // FakeProvider for tests
